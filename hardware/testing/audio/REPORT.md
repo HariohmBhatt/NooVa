@@ -6,9 +6,11 @@
 
 The ES8311 identity registers, codec initialization, I2S initialization, tone
 generation, volume/mute register controls, and recorded-buffer playback path
-passed. The first five-second microphone capture returned only a near-silent
-signal (`PEAK=36`, `RMS=5.04`), so microphone input acceptance and audible
-operator review remain pending.
+passed. Four sound-stimulated captures returned clearly non-zero input, with
+peaks of `2079`, `545`, `5374`, and `3558`. Additional captures with
+insufficient stimulus returned peaks of `414`, `383`, and `218`; their capture
+and playback streams still completed. Audible operator review and the full
+five-stimulus-cycle acceptance remain pending.
 
 ## Test Definition
 
@@ -37,7 +39,7 @@ operator review remain pending.
 - Board MAC: `1c:db:d4:79:7d:ac`
 - Upload port: `/dev/cu.usbmodem2101`
 - Upload result: `SUCCESS`
-- Speaker/microphone accessories: pending operator confirmation
+- Speaker/microphone accessories: speaker connected for rerun; onboard microphone used
 - Volume conditions: starts at 10%, maximum test level 20%
 
 ## Acceptance Results
@@ -45,13 +47,13 @@ operator review remain pending.
 - [x] ES8311 responded at the documented address
 - [x] Codec identity registers were readable
 - [x] I2S initialized with the verified pin and clock configuration
-- [ ] Low-volume tone output was audible and clean
+- [ ] Low-volume tone output was audibly confirmed clean
 - [x] Volume register control completed
 - [x] Mute and unmute register control completed
-- [ ] Microphone capture returned non-zero unsaturated input
+- [x] Microphone capture returned non-zero unsaturated input in sound-stimulated runs
 - [x] Five-second capture completed without I2S read failure
 - [x] Recorded audio playback completed
-- [ ] Five record/playback cycles completed
+- [ ] Five sound-stimulated record/playback cycles completed
 
 ## Exact Serial Output
 
@@ -71,19 +73,26 @@ operator review remain pending.
 [HW-005][PASS] MICROPHONE_INPUT_NOT_SATURATED
 [HW-005][PASS] RECORDED_AUDIO_PLAYBACK_STREAM
 [HW-005] RECORDING_DISCARDED=true
+[HW-005] CAPTURE PEAK=2079 RMS=66.16
+[HW-005][PASS] MICROPHONE_INPUT_NONZERO
+[HW-005][PASS] RECORDED_AUDIO_PLAYBACK_STREAM
+[HW-005] CAPTURE PEAK=5374 RMS=109.25
+[HW-005][PASS] MICROPHONE_INPUT_NONZERO
+[HW-005] CAPTURE PEAK=3558 RMS=23.64
+[HW-005][PASS] MICROPHONE_INPUT_NONZERO
 ```
 
 ## Observations
 
 The codec reported identity bytes `0x83`, `0x11`, and `0x01`. Tone generation,
 volume/mute control writes, five-second capture allocation/readback, and
-playback all completed. The microphone level was near silence in the first run;
-operator stimulus and accessory connection must be confirmed before diagnosing
-the input path.
+playback all completed. The microphone returned a clear signal when sound was
+present, confirming the input path is responsive. Some cycles had insufficient
+stimulus and are not counted toward the five-cycle acceptance.
 
 ## Defects and Follow-up
 
 - Audible acceptance requires operator review with a connected speaker and a
   known acoustic stimulus.
 - Audio recordings are intentionally not stored in the repository.
-- Microphone input is currently below the automated non-zero threshold.
+- Complete five sound-stimulated cycles and record audible tone/playback review.
