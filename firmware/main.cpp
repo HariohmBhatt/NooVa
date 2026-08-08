@@ -24,15 +24,16 @@ nova::OtaService gOta(gLogger, gWifi, gSsh);
 nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gSsh);
 bool gRemoteServicesPaused = false;
 
-void pauseRemoteServices() {
+void pauseAppliance() {
   if (gRemoteServicesPaused) {
     return;
   }
   gRemoteServicesPaused = true;
+  gDisplay.setBacklight(0);
   gSsh.setEnabled(false, false);
-  gWifi.disconnect();
+  gWifi.pause();
   gLogger.write(nova::LogLevel::Info,
-                "Remote services paused until the next boot");
+                "Display and remote services paused until the next boot");
 }
 
 }  // namespace
@@ -76,8 +77,10 @@ void setup() {
 }
 
 void loop() {
-  if (gButtons.update() == nova::ButtonEvent::BootReleased) {
-    pauseRemoteServices();
+  const nova::ButtonEvent buttonEvent = gButtons.update();
+  if (buttonEvent == nova::ButtonEvent::BootPressed ||
+      buttonEvent == nova::ButtonEvent::PwrPressed) {
+    pauseAppliance();
   }
   gWifi.update();
   gSsh.update();

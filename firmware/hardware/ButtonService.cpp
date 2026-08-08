@@ -37,18 +37,25 @@ ButtonEvent ButtonService::update() {
       digitalRead(board::kBootButtonPin) ==
       (board::kBootButtonPressedLevel ? HIGH : LOW);
   const bool bootChanged = updateInput(bootInput_, bootPressed, now);
-  if (bootChanged && !bootInput_.stablePressed) {
-    logger_.write(LogLevel::Info,
-                  "BOOT button released; pausing remote services");
-    return ButtonEvent::BootReleased;
+  ButtonEvent event = ButtonEvent::None;
+  if (bootChanged) {
+    logger_.write(bootInput_.stablePressed ? LogLevel::Info : LogLevel::Debug,
+                  bootInput_.stablePressed ? "BOOT button pressed"
+                                           : "BOOT button released");
+    if (bootInput_.stablePressed) {
+      event = ButtonEvent::BootPressed;
+    }
   }
 
   if (pwrReady_ && updateInput(pwrInput_, readPwrPressed(), now)) {
     logger_.write(pwrInput_.stablePressed ? LogLevel::Info : LogLevel::Debug,
                   pwrInput_.stablePressed ? "PWR button pressed"
                                           : "PWR button released");
+    if (pwrInput_.stablePressed && event == ButtonEvent::None) {
+      event = ButtonEvent::PwrPressed;
+    }
   }
-  return ButtonEvent::None;
+  return event;
 }
 
 bool ButtonService::isPwrReady() const { return pwrReady_; }

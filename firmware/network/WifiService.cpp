@@ -8,6 +8,7 @@ namespace nova {
 WifiService::WifiService(Logger& logger) : logger_(logger) {}
 
 bool WifiService::begin() {
+  servicePaused_ = false;
   preferencesReady_ = preferences_.begin("nova", false);
   if (!preferencesReady_) {
     state_ = WifiState::Error;
@@ -55,7 +56,7 @@ void WifiService::update() {
 }
 
 void WifiService::startScan() {
-  if (scanActive_) {
+  if (servicePaused_ || scanActive_) {
     return;
   }
 
@@ -78,6 +79,7 @@ bool WifiService::connect(const char* ssid, const char* password, bool persist) 
   snprintf(ssid_, sizeof(ssid_), "%s", ssid);
   snprintf(password_, sizeof(password_), "%s", password == nullptr ? "" : password);
   credentialsReady_ = true;
+  servicePaused_ = false;
   autoReconnect_ = true;
   if (persist && preferencesReady_) {
     preferences_.putString("wifi_ssid", ssid_);
@@ -88,11 +90,22 @@ bool WifiService::connect(const char* ssid, const char* password, bool persist) 
 }
 
 void WifiService::disconnect() {
+  cancelScan();
   autoReconnect_ = false;
   connectionActive_ = false;
   WiFi.disconnect(false, false);
   state_ = credentialsReady_ ? WifiState::Disconnected : WifiState::Unconfigured;
   logger_.write(LogLevel::Info, "Wi-Fi disconnected by user");
+}
+
+void WifiService::pause() {
+  cancelScan();
+  servicePaused_ = true;
+  autoReconnect_ = false;
+  connectionActive_ = false;
+  WiFi.disconnect(false, false);
+  state_ = credentialsReady_ ? WifiState::Disconnected : WifiState::Unconfigured;
+  logger_.write(LogLevel::Info, "Wi-Fi service paused until the next boot");
 }
 
 WifiState WifiService::state() const { return state_; }
@@ -144,6 +157,16 @@ void WifiService::startConnection() {
   connectionActive_ = true;
   state_ = WifiState::Connecting;
   logger_.writef(LogLevel::Info, "Wi-Fi connecting to %s", ssid_);
+}
+
+void WifiService::cancelScan() {
+  if (!scanActive_) {
+    return;
+  }
+  WiFi.scanDelete();
+  scanActive_ = false;
+  networkCount_ = 0;
+  logger_.write(LogLevel::Info, "Wi-Fi scan stopped");
 }
 
 void WifiService::finishScan(int result) {

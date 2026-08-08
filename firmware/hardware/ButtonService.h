@@ -11,7 +11,8 @@ namespace nova {
 
 enum class ButtonEvent : uint8_t {
   None,
-  BootReleased,
+  BootPressed,
+  PwrPressed,
 };
 
 class ButtonService {
@@ -22,7 +23,7 @@ class ButtonService {
   /** Initialize BOOT GPIO0 and the PWR TCA9554 input without changing LCD pins. */
   bool begin();
 
-  /** Poll and debounce both board buttons, returning a BOOT action when released. */
+  /** Poll and debounce both board buttons, returning an action when pressed. */
   ButtonEvent update();
 
   /** Return whether the PWR input on the shared expander was initialized. */

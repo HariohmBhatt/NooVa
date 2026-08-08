@@ -48,6 +48,9 @@ class WifiService {
   /** Disconnect and disable automatic reconnect until the next connect call. */
   void disconnect();
 
+  /** Pause Wi-Fi and cancel scans until the next firmware boot. */
+  void pause();
+
   /** Return the current station state. */
   WifiState state() const;
 
@@ -77,6 +80,7 @@ class WifiService {
   static constexpr uint32_t kReconnectDelayMs = 5000;
 
   void startConnection();
+  void cancelScan();
   void finishScan(int result);
   void updateConnection(uint32_t now);
 
@@ -94,6 +98,7 @@ class WifiService {
   bool connectionActive_ = false;
   bool autoReconnect_ = false;
   bool scanActive_ = false;
+  bool servicePaused_ = false;
 };
 
 }  // namespace nova
