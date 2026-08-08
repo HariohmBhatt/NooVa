@@ -5,6 +5,7 @@
 #include "hardware/BoardTouch.h"
 #include "network/SshService.h"
 #include "network/WifiService.h"
+#include "network/OtaService.h"
 #include "ui/UiController.h"
 
 namespace {
@@ -17,6 +18,7 @@ nova::BoardDisplay gDisplay;
 nova::BoardTouch gTouch;
 nova::WifiService gWifi(gLogger);
 nova::SshService gSsh(gLogger, gWifi);
+nova::OtaService gOta(gLogger, gWifi, gSsh);
 nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gSsh);
 
 }  // namespace
@@ -47,6 +49,9 @@ void setup() {
   if (!gSsh.begin()) {
     gLogger.write(nova::LogLevel::Error, "SSH service initialization failed");
   }
+  if (!gOta.begin()) {
+    gLogger.write(nova::LogLevel::Error, "OTA service initialization failed");
+  }
 
   if (!gUi.begin()) {
     gLogger.write(nova::LogLevel::Error, "UI initialization failed");
@@ -56,6 +61,7 @@ void setup() {
 void loop() {
   gWifi.update();
   gSsh.update();
+  gOta.update();
   gUi.update();
   delay(kLoopDelayMs);
 }

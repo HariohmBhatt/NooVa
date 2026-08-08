@@ -65,6 +65,24 @@ enable SSH, and then connect from the same LAN with `ssh nova@DEVICE_IP`. The
 server exposes `help`, `status`, `logs`, `wifi`, and `reboot`; it is not an
 arbitrary operating-system shell.
 
+## Remote Development
+
+The ESP32 is not a general-purpose build host. Develop and compile on the
+Mac, use SSH for diagnostics and controlled commands, and use OTA for firmware
+deployment. SSH enablement also enables the authenticated OTA endpoint on port
+3232.
+
+After one USB bootstrap flash containing OTA support, deploy subsequent builds
+without USB:
+
+```sh
+NOVA_OTA_HOST=192.168.29.18 NOVA_OTA_PASSWORD='temporary-password' \
+  sh scripts/deploy-ota.sh
+```
+
+Do not commit either environment variable or place the OTA service on an
+untrusted network.
+
 Only one application can own the USB serial/JTAG device at a time. Close
 Arduino Serial Monitor or another terminal before uploading or starting a
 debug session.
