@@ -26,7 +26,7 @@ constexpr uint32_t kStartupCaptureDelayMs = 2000;
 constexpr uint32_t kToneDurationMs = 1000;
 constexpr uint32_t kCaptureDurationMs = 5000;
 constexpr uint8_t kSafeVolumePercent = 10;
-constexpr uint8_t kTestVolumePercent = 20;
+constexpr uint8_t kTestVolumePercent = 70;
 constexpr size_t kToneFramesPerChunk = 256;
 constexpr size_t kCaptureChunkBytes = 4096;
 constexpr float kToneAmplitude = 0.20F;
@@ -376,6 +376,7 @@ void setup() {
     haltAfterFailure();
   }
   setCodecVolume(kSafeVolumePercent);
+  printResult("ES8311_UNMUTED", setCodecMute(false));
   Serial.println("[HW-005] AUDIO_TEST_READY");
   printHelp();
   printSummary();

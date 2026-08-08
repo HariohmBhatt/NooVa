@@ -26,8 +26,9 @@ official `es8311` library; no audio recordings are retained.
 ## Test Procedure
 
 1. Upload the test with a speaker connected at the board's speaker interface.
-2. Open the monitor and send `t`. Start at the emitted 10% volume tone; verify
-   low/high tone, mute, and unmute behavior audibly.
+2. Open the monitor and send `t`. Start at the emitted 10% volume tone; the
+   second tone uses 70% volume after the low-volume check. Verify low/high tone,
+   mute, and unmute behavior audibly.
 3. Send `r`, then speak or play a known tone near the microphone for five
    seconds. The captured PCM is played back and discarded in RAM.
 4. Record the peak/RMS values and any audible clipping, silence, or distortion.
