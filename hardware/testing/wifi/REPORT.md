@@ -24,7 +24,7 @@ from its active network without disconnecting the user.
 ## Execution Record
 
 - Date: 2026-08-08
-- Firmware commit: pending commit of HW-003 implementation
+- Firmware commit: `7b7cb2e`
 - Board serial: `1C:DB:D4:79:7D:AC`
 - Board MAC: `1c:db:d4:79:7d:ac`
 - Upload port: `/dev/cu.usbmodem2101`
