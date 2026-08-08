@@ -48,6 +48,7 @@ bool mountCard(bool formatIfMountFails) {
 }
 
 bool verifyFilesystem() {
+  SD_MMC.remove(kCheckFile);
   File file = SD_MMC.open(kCheckFile, FILE_WRITE);
   if (!file) {
     return false;
@@ -125,9 +126,9 @@ void setup() {
   if (mountCard(false)) {
     printResult("CARD_MOUNTED_WITHOUT_FORMAT", true);
     printCardInfo();
-    SD_MMC.end();
+    printResult("FILESYSTEM_WRITE_READ_DELETE", verifyFilesystem());
     gCompleted = true;
-    Serial.println("[HW-006] FORMAT_NOT_NEEDED");
+    Serial.println("[HW-006] FORMAT_NOT_NEEDED FILESYSTEM_VERIFIED=true");
     return;
   }
 

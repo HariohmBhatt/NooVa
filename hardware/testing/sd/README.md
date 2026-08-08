@@ -29,9 +29,10 @@ the explicit `F` command, then writes, reads, and deletes a temporary check file
 2. Reconnect USB and upload the formatter.
 3. Open the serial monitor at 115200 baud.
 4. Confirm the output shows `FORMAT_ARMED`.
-5. Send uppercase `F` once. This erases and formats the card.
-6. Wait for `FORMAT_COMPLETE` and keep the board powered until it appears.
-7. Disconnect power before removing the card.
+5. If the card mounts, the temporary write/read/delete check runs automatically.
+6. Only if `FORMAT_ARMED` appears, send uppercase `F` once to erase and format.
+7. Wait for `FORMAT_COMPLETE` or filesystem verification output.
+8. Disconnect power before removing the card.
 
 ## Commands
 
