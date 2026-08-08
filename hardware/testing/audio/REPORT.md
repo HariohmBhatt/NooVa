@@ -40,7 +40,7 @@ five-stimulus-cycle acceptance remain pending.
 - Upload port: `/dev/cu.usbmodem2101`
 - Upload result: `SUCCESS`
 - Speaker/microphone accessories: speaker connected for rerun; onboard microphone used
-- Volume conditions: starts at 10%, maximum test level 70%
+- Volume conditions: starts at 10%, maximum test level 100%
 
 ## Acceptance Results
 
