@@ -48,7 +48,9 @@ bool mountCard(bool formatIfMountFails) {
 }
 
 bool verifyFilesystem() {
-  SD_MMC.remove(kCheckFile);
+  if (SD_MMC.exists(kCheckFile)) {
+    SD_MMC.remove(kCheckFile);
+  }
   File file = SD_MMC.open(kCheckFile, FILE_WRITE);
   if (!file) {
     return false;
