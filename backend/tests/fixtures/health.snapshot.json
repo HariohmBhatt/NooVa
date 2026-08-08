@@ -1,0 +1,26 @@
+{
+  "protocol_version": 1,
+  "type": "health.snapshot",
+  "timestamp": "2026-08-08T14:00:05Z",
+  "payload": {
+    "dependency_status": "healthy",
+    "server_version": "0.1.0",
+    "home_time": "2026-08-08T19:30:05+05:30",
+    "uptime_seconds": 12345.6,
+    "cpu_percent": 14.2,
+    "memory_used_bytes": 4294967296,
+    "memory_total_bytes": 16777216000,
+    "disk_used_bytes": 107374182400,
+    "disk_total_bytes": 500107862016,
+    "network_interface": "enp3s0",
+    "network_rx_bytes_per_second": 1200.0,
+    "network_tx_bytes_per_second": 512.0,
+    "network_rx_bytes_total": 123456789,
+    "network_tx_bytes_total": 987654321,
+    "collection_errors": [],
+    "service_status": {
+      "hub_api": "healthy",
+      "metrics": "healthy"
+    }
+  }
+}

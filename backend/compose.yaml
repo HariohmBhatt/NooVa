@@ -1,0 +1,46 @@
+services:
+  hub-api:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NOVA_ENV: production
+      NOVA_DB_PATH: /data/nova.db
+      NOVA_PROC_ROOT: /host/proc
+      NOVA_SYS_ROOT: /host/sys
+      NOVA_DISK_ROOT: /host/root
+    volumes:
+      - hub_data:/data
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+    expose:
+      - "8000"
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "14"
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - hub-api
+    ports:
+      - "${NOVA_LAN_ADDRESS:-192.168.29.225}:443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "14"
+
+volumes:
+  hub_data:
+  caddy_data:
+  caddy_config:

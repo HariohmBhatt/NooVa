@@ -11,3 +11,14 @@ compile_commands.json
 .DS_Store
 .vscode/.browse.c_cpp.db*
 .vscode/ipch/
+
+# Hub runtime state and Python artifacts
+backend/.env
+backend/.venv/
+backend/*.egg-info/
+backend/data/
+.pytest_cache/
+**/__pycache__/
+*.pyc
+data/
+firmware/network/HubTrustAnchor.generated.h

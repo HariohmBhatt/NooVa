@@ -1,0 +1,10 @@
+[Unit]
+Description=NOVA Hub encrypted backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/nova-hub/backup.env
+ExecStart=/home/hariohm/nova-hub/infrastructure/backup/restic-backup.sh

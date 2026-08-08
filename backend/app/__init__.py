@@ -1,0 +1,1 @@
+"""NOVA hub application package."""

@@ -1,0 +1,3 @@
+[server]
+host-name=nova-hub
+allow-interfaces=enp3s0
