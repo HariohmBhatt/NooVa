@@ -65,6 +65,13 @@ enable SSH, and then connect from the same LAN with `ssh nova@DEVICE_IP`. The
 server exposes `help`, `status`, `logs`, `wifi`, and `reboot`; it is not an
 arbitrary operating-system shell.
 
+The BOOT button is GPIO0 and active-low. A debounced release pauses SSH and
+Wi-Fi for the current power session without clearing the persisted SSH setting;
+the services start again on the next normal boot. The PWR button is active-high
+on TCA9554 EXIO6. Its six-second hardware hold powers the board off, and a
+click powers it on while charging; firmware does not override that hardware
+power-control path.
+
 ## Remote Development
 
 The ESP32 is not a general-purpose build host. Develop and compile on the
@@ -73,7 +80,7 @@ deployment. SSH enablement also enables the authenticated OTA endpoint on port
 3232.
 
 After one USB bootstrap flash containing OTA support, deploy subsequent builds
-without USB:
+without USB. ArduinoOTA uses UDP on port 3232:
 
 ```sh
 NOVA_OTA_HOST=192.168.29.18 NOVA_OTA_PASSWORD='temporary-password' \

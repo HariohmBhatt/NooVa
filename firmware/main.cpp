@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 #include "core/Logger.h"
+#include "hardware/ButtonService.h"
 #include "hardware/BoardDisplay.h"
 #include "hardware/BoardTouch.h"
 #include "network/SshService.h"
@@ -14,12 +15,25 @@ constexpr uint32_t kSerialBaudRate = 115200;
 constexpr uint32_t kLoopDelayMs = 5;
 
 nova::Logger gLogger;
+nova::ButtonService gButtons(gLogger);
 nova::BoardDisplay gDisplay;
 nova::BoardTouch gTouch;
 nova::WifiService gWifi(gLogger);
 nova::SshService gSsh(gLogger, gWifi);
 nova::OtaService gOta(gLogger, gWifi, gSsh);
 nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gSsh);
+bool gRemoteServicesPaused = false;
+
+void pauseRemoteServices() {
+  if (gRemoteServicesPaused) {
+    return;
+  }
+  gRemoteServicesPaused = true;
+  gSsh.setEnabled(false, false);
+  gWifi.disconnect();
+  gLogger.write(nova::LogLevel::Info,
+                "Remote services paused until the next boot");
+}
 
 }  // namespace
 
@@ -42,6 +56,9 @@ void setup() {
   } else {
     gLogger.write(nova::LogLevel::Error, "Touch initialization failed");
   }
+  if (!gButtons.begin()) {
+    gLogger.write(nova::LogLevel::Error, "Button service initialization failed");
+  }
 
   if (!gWifi.begin()) {
     gLogger.write(nova::LogLevel::Error, "Wi-Fi service initialization failed");
@@ -59,6 +76,9 @@ void setup() {
 }
 
 void loop() {
+  if (gButtons.update() == nova::ButtonEvent::BootReleased) {
+    pauseRemoteServices();
+  }
   gWifi.update();
   gSsh.update();
   gOta.update();

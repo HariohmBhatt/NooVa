@@ -27,8 +27,8 @@ class SshService {
   /** Store the password and username required for SSH password authentication. */
   bool configure(const char* username, const char* password, bool persist);
 
-  /** Enable or disable the LAN SSH server. */
-  bool setEnabled(bool enabled);
+  /** Enable or disable the LAN SSH server, optionally preserving its setting. */
+  bool setEnabled(bool enabled, bool persist = true);
 
   /** Return whether the server is enabled in persistent settings. */
   bool isEnabled() const;

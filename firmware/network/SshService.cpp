@@ -70,12 +70,12 @@ bool SshService::configure(const char* username, const char* password,
   return true;
 }
 
-bool SshService::setEnabled(bool enabled) {
+bool SshService::setEnabled(bool enabled, bool persist) {
   if (enabled && !credentialsReady_) {
     return false;
   }
   enabled_ = enabled;
-  if (preferencesReady_) {
+  if (persist && preferencesReady_) {
     preferences_.putBool(kEnabledPreference, enabled);
   }
   if (enabled && taskHandle_ == nullptr) {
