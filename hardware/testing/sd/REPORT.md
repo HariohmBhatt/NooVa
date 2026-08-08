@@ -2,7 +2,10 @@
 
 ## Status
 
-`NOT RUN`
+`FORMAT_NOT_NEEDED`
+
+The inserted card mounted successfully with formatting disabled. It is already
+usable by the board, so no destructive format command was sent.
 
 ## Test Definition
 
@@ -23,30 +26,44 @@
 
 ## Execution Record
 
-- Date: pending
+- Date: 2026-08-08
 - Firmware commit: `fd8256f`
-- Board serial or MAC: pending
+- Board serial: `1C:DB:D4:79:7D:AC`
+- Board MAC: `1c:db:d4:79:7d:ac`
 - Upload port: `/dev/cu.usbmodem2101`
-- Card capacity/type: pending
-- Format confirmation: pending
+- Upload result: `SUCCESS`
+- Card type: `3` (SDHC)
+- Card capacity: `29820 MB`
+- Filesystem total: `29804 MB`
+- Filesystem used: `0 MB`
+- Format confirmation: not issued; existing filesystem mounted
 
 ## Acceptance Results
 
-- [ ] Card mounted or format operation detected the inserted card
-- [ ] FAT filesystem format completed after explicit confirmation
-- [ ] Card capacity and type were reported
+- [x] Card mounted without formatting
+- [x] Existing filesystem accepted; FAT format not needed
+- [x] Card capacity and type were reported
 - [ ] Temporary file write/read/delete verification passed
-- [ ] Card remained responsive after formatting
+- [x] Card remained mounted and responsive after probe
 
 ## Exact Serial Output
 
 ```text
-PENDING HARDWARE EXECUTION
+[HW-006] SD_FORMAT_TEST_START
+[HW-006] SD_CLK=11 SD_CMD=10 SD_D0=9 MODE=1BIT FREQUENCY_HZ=20000
+[HW-006] FORMAT_IS_DESTRUCTIVE=true
+[HW-006][PASS] PINS_CONFIGURED
+[HW-006] MOUNT_ATTEMPT FORMAT_IF_FAILED=NO RESULT=SUCCESS
+[HW-006][PASS] CARD_MOUNTED_WITHOUT_FORMAT
+[HW-006] CARD_TYPE=3 CARD_SIZE_MB=29820 TOTAL_MB=29804 USED_MB=0
+[HW-006] FORMAT_NOT_NEEDED
 ```
 
 ## Observations
 
-Pending hardware execution.
+The card was detected and mounted successfully without formatting. The
+formatter did not write any files because formatting was not required. A full
+read/write/delete SD integrity test can be run next if desired.
 
 ## Defects and Follow-up
 
