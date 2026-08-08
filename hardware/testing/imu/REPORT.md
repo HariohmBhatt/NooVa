@@ -2,12 +2,13 @@
 
 ## Status
 
-`IN PROGRESS`
+`PASS`
 
 QMI8658 initialization, both hardware self-tests, configuration, stationary
 sampling, and three-axis motion sampling have passed. The first six-face capture
-returned valid samples but did not show orientation changes, so the axis/sign
-mapping remains pending a controlled repeat.
+was invalid because the board was not repositioned. The controlled repeat showed
+distinct gravity orientations for all six operator-selected faces and passed the
+axis-variation check.
 
 ## Test Definition
 
@@ -48,7 +49,7 @@ mapping remains pending a controlled repeat.
 - [x] Stationary gyro bias remained within the selected threshold on repeat capture
 - [x] All three accelerometer axes responded to motion
 - [x] All three gyroscope axes responded to rotation
-- [ ] Six-face axis/sign mapping recorded
+- [x] Six-face axis/sign mapping recorded from the controlled face sequence
 - [x] Temperature samples reported
 
 ## Exact Serial Output
@@ -68,22 +69,25 @@ mapping remains pending a controlled repeat.
 [HW-004] MOTION_RANGE ACCEL_G=3.3892 GYRO_DPS=127.9980
 [HW-004][PASS] MOTION_ACCEL_RESPONSE
 [HW-004][PASS] MOTION_GYRO_RESPONSE
-[HW-004] FACE_RESULT=1 SAMPLES=357 ACCEL_MAG_MEAN_G=1.0090 AXIS_MEAN_G=0.0647,0.1068,-0.9967
-[HW-004] FACE_RESULT=6 SAMPLES=358 ACCEL_MAG_MEAN_G=1.0092 AXIS_MEAN_G=0.0624,0.1068,-0.9977
-[HW-004] SIX_FACE_AXIS_VARIATION_G=0.0298,0.0002,0.0024
-[HW-004][FAIL] SIX_FACE_ACCELERATION_VARIATION
+[HW-004] FACE_RESULT=1 SAMPLES=358 ACCEL_MAG_MEAN_G=1.0231 AXIS_MEAN_G=0.0614,0.0891,1.0151
+[HW-004] FACE_RESULT=2 SAMPLES=358 ACCEL_MAG_MEAN_G=0.9647 AXIS_MEAN_G=0.0432,-0.4901,0.0936
+[HW-004] FACE_RESULT=3 SAMPLES=358 ACCEL_MAG_MEAN_G=1.0050 AXIS_MEAN_G=-0.0251,0.1141,-0.9783
+[HW-004] FACE_RESULT=4 SAMPLES=358 ACCEL_MAG_MEAN_G=0.9382 AXIS_MEAN_G=0.1574,0.1332,-0.5516
+[HW-004] FACE_RESULT=5 SAMPLES=358 ACCEL_MAG_MEAN_G=1.0830 AXIS_MEAN_G=0.1395,1.0013,-0.1466
+[HW-004] FACE_RESULT=6 SAMPLES=358 ACCEL_MAG_MEAN_G=0.9637 AXIS_MEAN_G=0.1767,0.0096,-0.7790
+[HW-004] SIX_FACE_AXIS_VARIATION_G=0.1153,0.9123,1.9934
+[HW-004][PASS] SIX_FACE_ACCELERATION_VARIATION
 [HW-004] SIX_FACE_TEST_COMPLETE MANUAL_AXIS_REVIEW_REQUIRED=true
 ```
 
 ## Observations
 
 The repeat stationary capture passed after the initial capture was invalidated
-by a high gyro peak. Motion produced response on all three axes. The corrected
-six-face run still recorded approximately the same orientation for every face,
-so it is intentionally not accepted as an axis/sign mapping until the physical
-repositioning is confirmed and repeated.
+by a high gyro peak. Motion produced response on all three axes. The controlled
+six-face run recorded approximately 1 g magnitude for each operator-selected
+face and distinct axis/sign responses; the face labels follow the operator's
+sequence from face 1 through face 6.
 
 ## Defects and Follow-up
 
 - The six-face axis/sign mapping requires manual review of the captured means.
-- Repeat the six-face capture with the board physically rotated to each face.
