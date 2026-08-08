@@ -1,0 +1,7 @@
+{
+  "platformio-ide.autoOpenPIO": "never",
+  "files.associations": {
+    "*.h": "cpp",
+    "*.hpp": "cpp"
+  }
+}
