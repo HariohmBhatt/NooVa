@@ -54,9 +54,11 @@ the verified display and touch paths, renders a local diagnostic UI, and keeps a
 bounded debug log visible on the screen. USB serial is only a development
 mirror; the firmware does not wait for a connected computer during startup.
 
-Wi-Fi, SSH, power management, and the remaining peripheral services are added
-in later milestones. The UI deliberately reports those services as unavailable
-until they are implemented rather than presenting simulated status.
+The Wi-Fi page can scan nearby networks, accept a password through the
+touchscreen keyboard, persist the selected network in NVS, and reconnect after
+future boots. SSH, power management, and the remaining peripheral services are
+added in later milestones. The UI deliberately reports those services as
+unavailable until they are implemented rather than presenting simulated status.
 
 Only one application can own the USB serial/JTAG device at a time. Close
 Arduino Serial Monitor or another terminal before uploading or starting a

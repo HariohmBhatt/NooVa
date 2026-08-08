@@ -3,6 +3,7 @@
 #include "core/Logger.h"
 #include "hardware/BoardDisplay.h"
 #include "hardware/BoardTouch.h"
+#include "network/WifiService.h"
 #include "ui/UiController.h"
 
 namespace {
@@ -13,7 +14,8 @@ constexpr uint32_t kLoopDelayMs = 5;
 nova::Logger gLogger;
 nova::BoardDisplay gDisplay;
 nova::BoardTouch gTouch;
-nova::UiController gUi(gDisplay, gTouch, gLogger);
+nova::WifiService gWifi(gLogger);
+nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi);
 
 }  // namespace
 
@@ -37,12 +39,17 @@ void setup() {
     gLogger.write(nova::LogLevel::Error, "Touch initialization failed");
   }
 
+  if (!gWifi.begin()) {
+    gLogger.write(nova::LogLevel::Error, "Wi-Fi service initialization failed");
+  }
+
   if (!gUi.begin()) {
     gLogger.write(nova::LogLevel::Error, "UI initialization failed");
   }
 }
 
 void loop() {
+  gWifi.update();
   gUi.update();
   delay(kLoopDelayMs);
 }
