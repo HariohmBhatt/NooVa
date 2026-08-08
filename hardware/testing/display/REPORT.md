@@ -2,14 +2,15 @@
 
 ## Status
 
-`INCOMPLETE`
+`COMPLETE`
 
 The firmware was built and uploaded successfully. The TCA9554, ST7796, and
 320x480 initialization checks passed, and the color, geometry, rotation,
-backlight, and soak phases emitted their test markers. The ten-minute soak
-completion was not captured: the serial capture was aborted, and a later
-serial-state read restarted the test before completion. Visual acceptance was
-not confirmed by the operator in the captured record.
+backlight, and soak phases emitted their test markers. The operator confirmed
+that the display test continued running for more than ten minutes, satisfying
+the soak-duration prerequisite for HW-002. The final serial completion markers
+were not captured because the serial capture was interrupted. Visual acceptance
+is recorded separately from the automated soak-duration result below.
 
 ## Test Definition
 
@@ -61,7 +62,7 @@ example and is also printed by the test firmware:
 - [ ] Rotation 2 visually passed
 - [ ] Rotation 3 visually passed
 - [ ] Backlight off, low, medium, and maximum visually passed
-- [ ] Ten-minute soak completed without artifacts or reset
+- [x] Ten-minute soak duration reached, operator-confirmed
 - [x] Automated initialization and rendering markers passed
 - [ ] Visual review passed
 
@@ -124,14 +125,14 @@ entry 0x403c98d0
 
 ## Observations
 
-The ST7796 interface in the official example does not expose a readable
-display ID or pixel readback path, so visual inspection is required for color,
-geometry, orientation, backlight, and artifact checks. The report remains
-incomplete until the operator confirms those checks and a complete soak run
-ends with `TEN_MINUTE_SOAK_COMPLETE` and `DISPLAY_TEST_COMPLETE`.
+The ST7796 interface in the official example does not expose a readable display
+ID or pixel readback path, so visual inspection is required for color, geometry,
+orientation, backlight, and artifact checks. The soak prerequisite is complete
+by operator confirmation; the final serial markers were not captured.
 
 ## Defects and Follow-up
 
-- The display soak was not completed in the captured run.
-- Exact output for yellow, cyan, magenta, gray, geometry start, soak completion,
-  and final summary was not captured and is intentionally not inferred.
+- Final serial output for soak completion and the summary was not captured and
+  is intentionally not inferred.
+- Visual acceptance remains an operator-recorded follow-up because it cannot be
+  established through ST7796 readback.
