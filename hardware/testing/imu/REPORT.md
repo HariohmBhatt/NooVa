@@ -30,7 +30,7 @@ mapping remains pending a controlled repeat.
 ## Execution Record
 
 - Date: 2026-08-08
-- Firmware commit: pending commit of HW-004 implementation
+- Firmware commit: `d95e31a`
 - Board serial: `1C:DB:D4:79:7D:AC`
 - Board MAC: `1c:db:d4:79:7d:ac`
 - Upload port: `/dev/cu.usbmodem2101`
@@ -60,7 +60,7 @@ mapping remains pending a controlled repeat.
 [HW-004][PASS] GYROSCOPE_CONFIGURED
 [HW-004][PASS] ACCELEROMETER_ENABLED
 [HW-004][PASS] GYROSCOPE_ENABLED
-[HW-004] STATS=STATIONARY SAMPLES=715 NOT_READY=0 READ_ERRORS=0 ACCEL_MAG_G=0.9998..1.0176 MEAN=1.0138 GYRO_MAG_DPS=4.5152..8.3797 MEAN=6.4489
+[HW-004] STATS=STATIONARY SAMPLES=715 NOT_READY=0 READ_ERRORS=0 ACCEL_MAG_G=0.9769..1.0388 MEAN=1.0071 GYRO_MAG_DPS=4.4860..8.1193 MEAN=6.3987
 [HW-004][PASS] STATIONARY_SAMPLE_COUNT
 [HW-004][PASS] STATIONARY_ACCEL_MAGNITUDE
 [HW-004][PASS] STATIONARY_GYRO_BIAS
@@ -69,16 +69,19 @@ mapping remains pending a controlled repeat.
 [HW-004][PASS] MOTION_ACCEL_RESPONSE
 [HW-004][PASS] MOTION_GYRO_RESPONSE
 [HW-004] FACE_RESULT=1 SAMPLES=357 ACCEL_MAG_MEAN_G=1.0090 AXIS_MEAN_G=0.0647,0.1068,-0.9967
-[HW-004] FACE_RESULT=6 SAMPLES=358 ACCEL_MAG_MEAN_G=1.0091 AXIS_MEAN_G=0.0643,0.1068,-0.9960
+[HW-004] FACE_RESULT=6 SAMPLES=358 ACCEL_MAG_MEAN_G=1.0092 AXIS_MEAN_G=0.0624,0.1068,-0.9977
+[HW-004] SIX_FACE_AXIS_VARIATION_G=0.0298,0.0002,0.0024
+[HW-004][FAIL] SIX_FACE_ACCELERATION_VARIATION
 [HW-004] SIX_FACE_TEST_COMPLETE MANUAL_AXIS_REVIEW_REQUIRED=true
 ```
 
 ## Observations
 
 The repeat stationary capture passed after the initial capture was invalidated
-by a high gyro peak. Motion produced response on all three axes. The first
-six-face run recorded approximately the same orientation for every face, so it
-is intentionally not accepted as an axis/sign mapping.
+by a high gyro peak. Motion produced response on all three axes. The corrected
+six-face run still recorded approximately the same orientation for every face,
+so it is intentionally not accepted as an axis/sign mapping until the physical
+repositioning is confirmed and repeated.
 
 ## Defects and Follow-up
 
