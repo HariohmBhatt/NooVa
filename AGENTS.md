@@ -50,3 +50,17 @@ When implementing a feature:
 3. Implement.
 4. Explain testing.
 5. Wait for confirmation.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The default canonical triage labels are used. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses a single-context domain-doc layout. See `docs/agents/domain.md`.
