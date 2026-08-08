@@ -1,41 +1,48 @@
 #include <Arduino.h>
 
+#include "core/Logger.h"
+#include "hardware/BoardDisplay.h"
+#include "hardware/BoardTouch.h"
+#include "ui/UiController.h"
+
 namespace {
 
 constexpr uint32_t kSerialBaudRate = 115200;
-constexpr uint32_t kStatusPeriodMs = 2000;
-constexpr uint32_t kSerialConnectTimeoutMs = 3000;
+constexpr uint32_t kLoopDelayMs = 5;
 
-void printBoardStatus() {
-  Serial.println(F("Nova firmware bring-up diagnostic"));
-  Serial.printf("Chip: %s, revision %d\n", ESP.getChipModel(), ESP.getChipRevision());
-  Serial.printf("CPU: %lu MHz\n", ESP.getCpuFreqMHz());
-  Serial.printf("Flash: %lu bytes\n", ESP.getFlashChipSize());
-  Serial.printf("PSRAM: %s, %lu bytes\n", psramFound() ? "available" : "not detected",
-                ESP.getPsramSize());
-}
+nova::Logger gLogger;
+nova::BoardDisplay gDisplay;
+nova::BoardTouch gTouch;
+nova::UiController gUi(gDisplay, gTouch, gLogger);
 
 }  // namespace
 
 void setup() {
   Serial.begin(kSerialBaudRate);
+  gLogger.write(nova::LogLevel::Info, "Nova appliance booting");
+  gLogger.writef(nova::LogLevel::Info, "Chip=%s revision=%d flash=%lu PSRAM=%s",
+                 ESP.getChipModel(), ESP.getChipRevision(),
+                 static_cast<unsigned long>(ESP.getFlashChipSize()),
+                 psramFound() ? "READY" : "MISSING");
 
-  const uint32_t waitStartedAt = millis();
-  while (!Serial && millis() - waitStartedAt < kSerialConnectTimeoutMs) {
-    delay(10);
+  if (!gDisplay.begin()) {
+    gLogger.write(nova::LogLevel::Error, "Display initialization failed");
+    return;
+  }
+  gLogger.write(nova::LogLevel::Info, "Display initialized");
+
+  if (gTouch.begin()) {
+    gLogger.write(nova::LogLevel::Info, "Touch initialized");
+  } else {
+    gLogger.write(nova::LogLevel::Error, "Touch initialization failed");
   }
 
-  printBoardStatus();
+  if (!gUi.begin()) {
+    gLogger.write(nova::LogLevel::Error, "UI initialization failed");
+  }
 }
 
 void loop() {
-  static uint32_t lastStatusAt = 0;
-  const uint32_t now = millis();
-
-  if (now - lastStatusAt >= kStatusPeriodMs) {
-    lastStatusAt = now;
-    Serial.printf("Uptime: %lu s\n", now / 1000);
-  }
-
-  delay(10);
+  gUi.update();
+  delay(kLoopDelayMs);
 }

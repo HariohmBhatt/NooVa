@@ -49,10 +49,14 @@ pio run --target clean
 pio run --target erase --upload-port /dev/cu.usbmodemXXXX
 ```
 
-The initial firmware is a hardware bring-up diagnostic. It reports chip,
-flash, PSRAM, CPU, and uptime information over USB serial. It intentionally
-does not configure display, touch, audio, RTC, IMU, storage, or GPIO pins;
-those pins must be added from the official Waveshare schematic before use.
+The default firmware is the first offline appliance milestone. It initializes
+the verified display and touch paths, renders a local diagnostic UI, and keeps a
+bounded debug log visible on the screen. USB serial is only a development
+mirror; the firmware does not wait for a connected computer during startup.
+
+Wi-Fi, SSH, power management, and the remaining peripheral services are added
+in later milestones. The UI deliberately reports those services as unavailable
+until they are implemented rather than presenting simulated status.
 
 Only one application can own the USB serial/JTAG device at a time. Close
 Arduino Serial Monitor or another terminal before uploading or starting a
