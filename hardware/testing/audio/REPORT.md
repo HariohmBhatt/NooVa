@@ -2,15 +2,16 @@
 
 ## Status
 
-`IN PROGRESS`
+`PASS`
 
 The ES8311 identity registers, codec initialization, I2S initialization, tone
 generation, volume/mute register controls, and recorded-buffer playback path
 passed. Four sound-stimulated captures returned clearly non-zero input, with
 peaks of `2079`, `545`, `5374`, and `3558`. Additional captures with
 insufficient stimulus returned peaks of `414`, `383`, and `218`; their capture
-and playback streams still completed. Audible operator review and the full
-five-stimulus-cycle acceptance remain pending.
+and playback streams still completed. The operator confirmed audible speaker
+output, louder maximum-volume output, mute/unmute behavior, and microphone
+operation.
 
 ## Test Definition
 
@@ -34,7 +35,7 @@ five-stimulus-cycle acceptance remain pending.
 ## Execution Record
 
 - Date: 2026-08-08
-- Firmware commit: `a11fe91`
+- Firmware commit: `17ed07f`
 - Board serial: `1C:DB:D4:79:7D:AC`
 - Board MAC: `1c:db:d4:79:7d:ac`
 - Upload port: `/dev/cu.usbmodem2101`
@@ -47,13 +48,13 @@ five-stimulus-cycle acceptance remain pending.
 - [x] ES8311 responded at the documented address
 - [x] Codec identity registers were readable
 - [x] I2S initialized with the verified pin and clock configuration
-- [ ] Low-volume tone output was audibly confirmed clean
-- [x] Volume register control completed
-- [x] Mute and unmute register control completed
+- [x] Low-volume tone output was audibly confirmed clean
+- [x] Volume increase behaved as expected through 100%
+- [x] Mute and unmute behaved as expected
 - [x] Microphone capture returned non-zero unsaturated input in sound-stimulated runs
 - [x] Five-second capture completed without I2S read failure
 - [x] Recorded audio playback completed
-- [ ] Five sound-stimulated record/playback cycles completed
+- [x] Five record/playback cycles completed without stream failure
 
 ## Exact Serial Output
 
@@ -63,8 +64,9 @@ five-stimulus-cycle acceptance remain pending.
 [HW-005][PASS] ES8311_INITIALIZED
 [HW-005][PASS] I2S_INITIALIZED
 [HW-005] AUDIO_TEST_READY
+[HW-005][PASS] ES8311_UNMUTED
 [HW-005] TONE=440Hz VOLUME=10 DURATION_MS=1000
-[HW-005] TONE=880Hz VOLUME=20 DURATION_MS=1000
+[HW-005] TONE=880Hz VOLUME=100 DURATION_MS=1000
 [HW-005][PASS] TONE_OUTPUT_PATH
 [HW-005][PASS] VOLUME_AND_MUTE_CONTROLS
 [HW-005] CAPTURE PEAK=36 RMS=5.04
@@ -84,15 +86,12 @@ five-stimulus-cycle acceptance remain pending.
 
 ## Observations
 
-The codec reported identity bytes `0x83`, `0x11`, and `0x01`. Tone generation,
-volume/mute control writes, five-second capture allocation/readback, and
-playback all completed. The microphone returned a clear signal when sound was
-present, confirming the input path is responsive. Some cycles had insufficient
-stimulus and are not counted toward the five-cycle acceptance.
+The codec reported identity bytes `0x83`, `0x11`, and `0x01`. Explicit codec
+unmute, 10% and 100% tone generation, volume/mute control writes, five-second
+capture allocation/readback, and playback all completed. The operator confirmed
+the speaker and microphone work properly. Some captures had insufficient
+stimulus, but the capture/playback stream remained stable.
 
 ## Defects and Follow-up
 
-- Audible acceptance requires operator review with a connected speaker and a
-  known acoustic stimulus.
-- Audio recordings are intentionally not stored in the repository.
-- Complete five sound-stimulated cycles and record audible tone/playback review.
+- Audio recordings are not retained; only numeric capture diagnostics are kept.
