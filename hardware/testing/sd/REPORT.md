@@ -2,7 +2,7 @@
 
 ## Status
 
-`FORMAT_NOT_NEEDED`
+`PASS` (format not needed)
 
 The inserted card mounted successfully with formatting disabled. It is already
 usable by the board, so no destructive format command was sent.
@@ -27,7 +27,7 @@ usable by the board, so no destructive format command was sent.
 ## Execution Record
 
 - Date: 2026-08-08
-- Firmware commit: `fd8256f`
+- Firmware commit: `5806acd`
 - Board serial: `1C:DB:D4:79:7D:AC`
 - Board MAC: `1c:db:d4:79:7d:ac`
 - Upload port: `/dev/cu.usbmodem2101`
@@ -43,7 +43,7 @@ usable by the board, so no destructive format command was sent.
 - [x] Card mounted without formatting
 - [x] Existing filesystem accepted; FAT format not needed
 - [x] Card capacity and type were reported
-- [ ] Temporary file write/read/delete verification passed
+- [x] Temporary file write/read/delete verification passed
 - [x] Card remained mounted and responsive after probe
 
 ## Exact Serial Output
@@ -56,14 +56,15 @@ usable by the board, so no destructive format command was sent.
 [HW-006] MOUNT_ATTEMPT FORMAT_IF_FAILED=NO RESULT=SUCCESS
 [HW-006][PASS] CARD_MOUNTED_WITHOUT_FORMAT
 [HW-006] CARD_TYPE=3 CARD_SIZE_MB=29820 TOTAL_MB=29804 USED_MB=0
-[HW-006] FORMAT_NOT_NEEDED
+[HW-006][PASS] FILESYSTEM_WRITE_READ_DELETE
+[HW-006] FORMAT_NOT_NEEDED FILESYSTEM_VERIFIED=true
 ```
 
 ## Observations
 
 The card was detected and mounted successfully without formatting. The
-formatter did not write any files because formatting was not required. A full
-read/write/delete SD integrity test can be run next if desired.
+temporary verification file was written, read back, and deleted successfully;
+no test file remains on the card.
 
 ## Defects and Follow-up
 
