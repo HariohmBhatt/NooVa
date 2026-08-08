@@ -302,12 +302,12 @@ void UiController::buildUi() {
   lv_textarea_set_password_mode(wifiPassword_, true);
   lv_textarea_set_placeholder_text(wifiPassword_, "Wi-Fi password");
   styleObject(wifiPassword_, kPanelColor, kTextColor);
+  lv_obj_add_event_cb(wifiPassword_, handleWifiKeyboard, LV_EVENT_ALL, this);
   wifiKeyboard_ = lv_keyboard_create(wifiPage_);
   lv_obj_set_size(wifiKeyboard_, 304, 270);
   lv_obj_set_pos(wifiKeyboard_, 0, 92);
   lv_keyboard_set_mode(wifiKeyboard_, LV_KEYBOARD_MODE_TEXT_LOWER);
   lv_keyboard_set_textarea(wifiKeyboard_, wifiPassword_);
-  lv_obj_add_event_cb(wifiKeyboard_, handleWifiKeyboard, LV_EVENT_ALL, this);
   lv_obj_add_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
 
@@ -343,12 +343,12 @@ void UiController::buildUi() {
   lv_textarea_set_password_mode(sshPassword_, true);
   lv_textarea_set_placeholder_text(sshPassword_, "SSH password");
   styleObject(sshPassword_, kPanelColor, kTextColor);
+  lv_obj_add_event_cb(sshPassword_, handleSshKeyboard, LV_EVENT_ALL, this);
   sshKeyboard_ = lv_keyboard_create(sshPage_);
   lv_obj_set_size(sshKeyboard_, 304, 270);
   lv_obj_set_pos(sshKeyboard_, 0, 92);
   lv_keyboard_set_mode(sshKeyboard_, LV_KEYBOARD_MODE_TEXT_LOWER);
   lv_keyboard_set_textarea(sshKeyboard_, sshPassword_);
-  lv_obj_add_event_cb(sshKeyboard_, handleSshKeyboard, LV_EVENT_ALL, this);
   lv_obj_add_flag(sshPassword_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(sshKeyboard_, LV_OBJ_FLAG_HIDDEN);
 
