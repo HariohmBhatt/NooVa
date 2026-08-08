@@ -4,6 +4,7 @@
 #include "hardware/ButtonService.h"
 #include "hardware/BoardDisplay.h"
 #include "hardware/BoardTouch.h"
+#include "network/HubConnectionService.h"
 #include "network/SshService.h"
 #include "network/WifiService.h"
 #include "network/OtaService.h"
@@ -19,9 +20,10 @@ nova::ButtonService gButtons(gLogger);
 nova::BoardDisplay gDisplay;
 nova::BoardTouch gTouch;
 nova::WifiService gWifi(gLogger);
+nova::HubConnectionService gHub(gLogger, gWifi);
 nova::SshService gSsh(gLogger, gWifi);
 nova::OtaService gOta(gLogger, gWifi, gSsh);
-nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gSsh);
+nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gSsh, gHub);
 bool gRemoteServicesPaused = false;
 
 void pauseAppliance() {
@@ -64,6 +66,9 @@ void setup() {
   if (!gWifi.begin()) {
     gLogger.write(nova::LogLevel::Error, "Wi-Fi service initialization failed");
   }
+  if (!gHub.begin()) {
+    gLogger.write(nova::LogLevel::Error, "Hub connection service initialization failed");
+  }
   if (!gSsh.begin()) {
     gLogger.write(nova::LogLevel::Error, "SSH service initialization failed");
   }
@@ -83,6 +88,7 @@ void loop() {
     pauseAppliance();
   }
   gWifi.update();
+  gHub.update();
   gSsh.update();
   gOta.update();
   gUi.update();
