@@ -24,7 +24,7 @@
 ## Execution Record
 
 - Date: pending
-- Firmware commit: pending
+- Firmware commit: `fd8256f`
 - Board serial or MAC: pending
 - Upload port: `/dev/cu.usbmodem2101`
 - Card capacity/type: pending
