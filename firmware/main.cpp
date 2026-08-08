@@ -3,6 +3,7 @@
 #include "core/Logger.h"
 #include "hardware/BoardDisplay.h"
 #include "hardware/BoardTouch.h"
+#include "network/SshService.h"
 #include "network/WifiService.h"
 #include "ui/UiController.h"
 
@@ -15,7 +16,8 @@ nova::Logger gLogger;
 nova::BoardDisplay gDisplay;
 nova::BoardTouch gTouch;
 nova::WifiService gWifi(gLogger);
-nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi);
+nova::SshService gSsh(gLogger, gWifi);
+nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gSsh);
 
 }  // namespace
 
@@ -42,6 +44,9 @@ void setup() {
   if (!gWifi.begin()) {
     gLogger.write(nova::LogLevel::Error, "Wi-Fi service initialization failed");
   }
+  if (!gSsh.begin()) {
+    gLogger.write(nova::LogLevel::Error, "SSH service initialization failed");
+  }
 
   if (!gUi.begin()) {
     gLogger.write(nova::LogLevel::Error, "UI initialization failed");
@@ -50,6 +55,7 @@ void setup() {
 
 void loop() {
   gWifi.update();
+  gSsh.update();
   gUi.update();
   delay(kLoopDelayMs);
 }

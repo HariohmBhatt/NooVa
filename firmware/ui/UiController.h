@@ -9,6 +9,7 @@
 #include "../hardware/BoardDisplay.h"
 #include "../hardware/BoardPins.h"
 #include "../hardware/BoardTouch.h"
+#include "../network/SshService.h"
 #include "../network/WifiService.h"
 
 namespace nova {
@@ -17,7 +18,7 @@ class UiController {
  public:
   /** Connect LVGL to board services and build the application UI. */
   UiController(BoardDisplay& display, BoardTouch& touch, Logger& logger,
-               WifiService& wifi);
+               WifiService& wifi, SshService& ssh);
 
   /** Initialize LVGL and create the offline-capable application screens. */
   bool begin();
@@ -33,6 +34,7 @@ class UiController {
     Home,
     Diagnostics,
     Wifi,
+    Ssh,
     Logs,
   };
 
@@ -47,6 +49,8 @@ class UiController {
   static void handleNavigation(lv_event_t* event);
   static void handleWifiControls(lv_event_t* event);
   static void handleWifiKeyboard(lv_event_t* event);
+  static void handleSshControls(lv_event_t* event);
+  static void handleSshKeyboard(lv_event_t* event);
 
   void buildUi();
   void showPage(Page page);
@@ -55,15 +59,19 @@ class UiController {
   void updateHomeView();
   void updateDiagnosticsView();
   void updateWifiView();
+  void updateSshView();
   void updateLogView();
   void preparePage(lv_obj_t* page);
   lv_obj_t* createNavigationButton(const char* text, int16_t x);
   const char* levelName(LogLevel level) const;
+  void showSshPassword();
+  void hideSshPassword();
 
   BoardDisplay& display_;
   BoardTouch& touch_;
   Logger& logger_;
   WifiService& wifi_;
+  SshService& ssh_;
   lv_disp_draw_buf_t drawBuffer_ = {};
   lv_disp_drv_t displayDriver_ = {};
   lv_indev_drv_t inputDriver_ = {};
@@ -71,6 +79,7 @@ class UiController {
   lv_obj_t* homePage_ = nullptr;
   lv_obj_t* diagnosticsPage_ = nullptr;
   lv_obj_t* wifiPage_ = nullptr;
+  lv_obj_t* sshPage_ = nullptr;
   lv_obj_t* logsPage_ = nullptr;
   lv_obj_t* logText_ = nullptr;
   lv_obj_t* homeStatus_ = nullptr;
@@ -80,9 +89,15 @@ class UiController {
   lv_obj_t* wifiScanButton_ = nullptr;
   lv_obj_t* wifiPassword_ = nullptr;
   lv_obj_t* wifiKeyboard_ = nullptr;
+  lv_obj_t* sshStatus_ = nullptr;
+  lv_obj_t* sshActionButton_ = nullptr;
+  lv_obj_t* sshPassword_ = nullptr;
+  lv_obj_t* sshKeyboard_ = nullptr;
+  lv_obj_t* sshInstructions_ = nullptr;
   lv_obj_t* navigationHome_ = nullptr;
   lv_obj_t* navigationDiagnostics_ = nullptr;
   lv_obj_t* navigationWifi_ = nullptr;
+  lv_obj_t* navigationSsh_ = nullptr;
   lv_obj_t* navigationLogs_ = nullptr;
   lv_obj_t* wifiNetworkButtons_[WifiService::kMaxNetworks] = {};
   size_t selectedNetworkIndex_ = WifiService::kMaxNetworks;

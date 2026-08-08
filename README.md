@@ -60,6 +60,11 @@ future boots. SSH, power management, and the remaining peripheral services are
 added in later milestones. The UI deliberately reports those services as
 unavailable until they are implemented rather than presenting simulated status.
 
+The SSH page uses the fixed user name `nova`. Set a password on the touchscreen,
+enable SSH, and then connect from the same LAN with `ssh nova@DEVICE_IP`. The
+server exposes `help`, `status`, `logs`, `wifi`, and `reboot`; it is not an
+arbitrary operating-system shell.
+
 Only one application can own the USB serial/JTAG device at a time. Close
 Arduino Serial Monitor or another terminal before uploading or starting a
 debug session.

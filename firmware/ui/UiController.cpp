@@ -20,8 +20,12 @@ void styleObject(lv_obj_t* object, uint32_t background, uint32_t text) {
 }  // namespace
 
 UiController::UiController(BoardDisplay& display, BoardTouch& touch,
-                           Logger& logger, WifiService& wifi)
-    : display_(display), touch_(touch), logger_(logger), wifi_(wifi) {}
+                           Logger& logger, WifiService& wifi, SshService& ssh)
+    : display_(display),
+      touch_(touch),
+      logger_(logger),
+      wifi_(wifi),
+      ssh_(ssh) {}
 
 bool UiController::begin() {
   if (!display_.isReady()) {
@@ -65,6 +69,7 @@ void UiController::update() {
     updateHomeView();
     updateDiagnosticsView();
     updateWifiView();
+    updateSshView();
     updateLogView();
   }
   lv_timer_handler();
@@ -114,8 +119,46 @@ void UiController::handleNavigation(lv_event_t* event) {
     controller->showPage(Page::Diagnostics);
   } else if (target == controller->navigationWifi_) {
     controller->showPage(Page::Wifi);
+  } else if (target == controller->navigationSsh_) {
+    controller->showPage(Page::Ssh);
   } else if (target == controller->navigationLogs_) {
     controller->showPage(Page::Logs);
+  }
+}
+
+void UiController::handleSshControls(lv_event_t* event) {
+  auto* controller = static_cast<UiController*>(lv_event_get_user_data(event));
+  if (controller == nullptr || lv_event_get_target(event) !=
+                                  controller->sshActionButton_) {
+    return;
+  }
+
+  if (controller->ssh_.isEnabled()) {
+    controller->ssh_.setEnabled(false);
+  } else if (controller->ssh_.hasCredentials()) {
+    controller->ssh_.setEnabled(true);
+  } else {
+    controller->showSshPassword();
+  }
+  controller->updateSshView();
+}
+
+void UiController::handleSshKeyboard(lv_event_t* event) {
+  auto* controller = static_cast<UiController*>(lv_event_get_user_data(event));
+  if (controller == nullptr) {
+    return;
+  }
+
+  const lv_event_code_t code = lv_event_get_code(event);
+  if (code == LV_EVENT_CANCEL) {
+    controller->hideSshPassword();
+  } else if (code == LV_EVENT_READY) {
+    if (controller->ssh_.configure("nova",
+                                   lv_textarea_get_text(controller->sshPassword_),
+                                   true)) {
+      controller->ssh_.setEnabled(true);
+    }
+    controller->hideSshPassword();
   }
 }
 
@@ -189,10 +232,12 @@ void UiController::buildUi() {
   homePage_ = lv_obj_create(content);
   diagnosticsPage_ = lv_obj_create(content);
   wifiPage_ = lv_obj_create(content);
+  sshPage_ = lv_obj_create(content);
   logsPage_ = lv_obj_create(content);
   preparePage(homePage_);
   preparePage(diagnosticsPage_);
   preparePage(wifiPage_);
+  preparePage(sshPage_);
   preparePage(logsPage_);
 
   lv_obj_t* homeTitle = lv_label_create(homePage_);
@@ -203,10 +248,11 @@ void UiController::buildUi() {
   homeStatus_ = lv_label_create(homePage_);
   lv_label_set_text_fmt(
       homeStatus_,
-      "Display: %s\nTouch: %s\nWi-Fi: %s\nSSH: DISABLED\n\n"
+      "Display: %s\nTouch: %s\nWi-Fi: %s\nSSH: %s\n\n"
       "USB serial is optional.\nThe device is ready to run from a power bank.",
       display_.isReady() ? "READY" : "FAILED",
-      touch_.isReady() ? "READY" : "FAILED", wifi_.stateName());
+      touch_.isReady() ? "READY" : "FAILED", wifi_.stateName(),
+      ssh_.isEnabled() ? "ENABLED" : "DISABLED");
   lv_obj_set_pos(homeStatus_, 12, 54);
   lv_obj_set_style_text_color(homeStatus_, lv_color_hex(kTextColor),
                               LV_PART_MAIN);
@@ -265,6 +311,47 @@ void UiController::buildUi() {
   lv_obj_add_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
 
+  lv_obj_t* sshTitle = lv_label_create(sshPage_);
+  lv_label_set_text(sshTitle, "SSH ACCESS");
+  lv_obj_set_pos(sshTitle, 12, 14);
+  lv_obj_set_style_text_color(sshTitle, lv_color_hex(kAccentColor),
+                              LV_PART_MAIN);
+  sshStatus_ = lv_label_create(sshPage_);
+  lv_obj_set_pos(sshStatus_, 12, 50);
+  lv_obj_set_style_text_color(sshStatus_, lv_color_hex(kTextColor),
+                              LV_PART_MAIN);
+  sshActionButton_ = lv_btn_create(sshPage_);
+  lv_obj_set_size(sshActionButton_, 82, 34);
+  lv_obj_set_pos(sshActionButton_, 210, 10);
+  styleObject(sshActionButton_, kPanelColor, kTextColor);
+  lv_obj_add_event_cb(sshActionButton_, handleSshControls, LV_EVENT_CLICKED,
+                      this);
+  lv_obj_t* sshActionLabel = lv_label_create(sshActionButton_);
+  lv_label_set_text(sshActionLabel, "SET UP");
+  lv_obj_center(sshActionLabel);
+  sshInstructions_ = lv_label_create(sshPage_);
+  lv_label_set_text(sshInstructions_,
+                    "SSH is LAN-only and disabled until\na password is configured.\n\n"
+                    "The server exposes diagnostic commands,\nnot an operating-system shell.");
+  lv_obj_set_pos(sshInstructions_, 12, 108);
+  lv_obj_set_style_text_color(sshInstructions_, lv_color_hex(kTextColor),
+                              LV_PART_MAIN);
+  sshPassword_ = lv_textarea_create(sshPage_);
+  lv_obj_set_size(sshPassword_, 280, 42);
+  lv_obj_set_pos(sshPassword_, 12, 44);
+  lv_textarea_set_one_line(sshPassword_, true);
+  lv_textarea_set_password_mode(sshPassword_, true);
+  lv_textarea_set_placeholder_text(sshPassword_, "SSH password");
+  styleObject(sshPassword_, kPanelColor, kTextColor);
+  sshKeyboard_ = lv_keyboard_create(sshPage_);
+  lv_obj_set_size(sshKeyboard_, 304, 270);
+  lv_obj_set_pos(sshKeyboard_, 0, 92);
+  lv_keyboard_set_mode(sshKeyboard_, LV_KEYBOARD_MODE_TEXT_LOWER);
+  lv_keyboard_set_textarea(sshKeyboard_, sshPassword_);
+  lv_obj_add_event_cb(sshKeyboard_, handleSshKeyboard, LV_EVENT_ALL, this);
+  lv_obj_add_flag(sshPassword_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(sshKeyboard_, LV_OBJ_FLAG_HIDDEN);
+
   lv_obj_t* logsTitle = lv_label_create(logsPage_);
   lv_label_set_text(logsTitle, "LIVE DEBUG LOG");
   lv_obj_set_pos(logsTitle, 12, 14);
@@ -278,11 +365,13 @@ void UiController::buildUi() {
   styleObject(logText_, kPanelColor, kTextColor);
 
   navigationHome_ = createNavigationButton("HOME", 8);
-  navigationDiagnostics_ = createNavigationButton("DIAG", 82);
-  navigationWifi_ = createNavigationButton("WIFI", 156);
-  navigationLogs_ = createNavigationButton("LOG", 230);
+  navigationDiagnostics_ = createNavigationButton("DIAG", 67);
+  navigationWifi_ = createNavigationButton("WIFI", 126);
+  navigationSsh_ = createNavigationButton("SSH", 185);
+  navigationLogs_ = createNavigationButton("LOG", 244);
   lv_obj_add_flag(diagnosticsPage_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(wifiPage_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(sshPage_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(logsPage_, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -290,6 +379,7 @@ void UiController::showPage(Page page) {
   lv_obj_add_flag(homePage_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(diagnosticsPage_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(wifiPage_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(sshPage_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(logsPage_, LV_OBJ_FLAG_HIDDEN);
   switch (page) {
     case Page::Home:
@@ -301,6 +391,10 @@ void UiController::showPage(Page page) {
     case Page::Wifi:
       lv_obj_clear_flag(wifiPage_, LV_OBJ_FLAG_HIDDEN);
       updateWifiView();
+      break;
+    case Page::Ssh:
+      lv_obj_clear_flag(sshPage_, LV_OBJ_FLAG_HIDDEN);
+      updateSshView();
       break;
     case Page::Logs:
       lv_obj_clear_flag(logsPage_, LV_OBJ_FLAG_HIDDEN);
@@ -333,6 +427,24 @@ void UiController::hideWifiPassword() {
   updateWifiView();
 }
 
+void UiController::showSshPassword() {
+  lv_textarea_set_text(sshPassword_, "");
+  lv_obj_add_flag(sshInstructions_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(sshActionButton_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(sshPassword_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(sshKeyboard_, LV_OBJ_FLAG_HIDDEN);
+  lv_keyboard_set_textarea(sshKeyboard_, sshPassword_);
+  lv_label_set_text(sshStatus_, "Set password for SSH user: nova");
+}
+
+void UiController::hideSshPassword() {
+  lv_obj_add_flag(sshPassword_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(sshKeyboard_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(sshInstructions_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(sshActionButton_, LV_OBJ_FLAG_HIDDEN);
+  updateSshView();
+}
+
 void UiController::updateHomeView() {
   if (homeStatus_ == nullptr) {
     return;
@@ -340,10 +452,11 @@ void UiController::updateHomeView() {
   const String ip = wifi_.ipAddress().toString();
   lv_label_set_text_fmt(
       homeStatus_,
-      "Display: %s\nTouch: %s\nWi-Fi: %s\nIP: %s\nSSH: DISABLED\n\n"
+      "Display: %s\nTouch: %s\nWi-Fi: %s\nIP: %s\nSSH: %s\n\n"
       "USB serial is optional.\nThe device is ready to run from a power bank.",
       display_.isReady() ? "READY" : "FAILED",
-      touch_.isReady() ? "READY" : "FAILED", wifi_.stateName(), ip.c_str());
+      touch_.isReady() ? "READY" : "FAILED", wifi_.stateName(), ip.c_str(),
+      ssh_.isEnabled() ? "ENABLED" : "DISABLED");
 }
 
 void UiController::updateDiagnosticsView() {
@@ -395,6 +508,30 @@ void UiController::updateWifiView() {
     wifiNetworkButtons_[index] = lv_list_add_btn(wifiList_, nullptr, label);
     lv_obj_add_event_cb(wifiNetworkButtons_[index], handleWifiControls,
                         LV_EVENT_CLICKED, this);
+  }
+}
+
+void UiController::updateSshView() {
+  if (sshStatus_ == nullptr || sshActionButton_ == nullptr) {
+    return;
+  }
+
+  const String ip = wifi_.ipAddress().toString();
+  if (!ssh_.hasCredentials()) {
+    lv_label_set_text(sshStatus_, "Status: NOT CONFIGURED\nUser: nova");
+  } else if (ssh_.isEnabled()) {
+    lv_label_set_text_fmt(sshStatus_, "Status: %s\nssh %s@%s",
+                          ssh_.isReady() ? "READY" : "STARTING", ssh_.username(),
+                          ip.c_str());
+  } else {
+    lv_label_set_text_fmt(sshStatus_, "Status: DISABLED\nUser: %s",
+                          ssh_.username());
+  }
+  lv_obj_t* actionLabel = lv_obj_get_child(sshActionButton_, 0);
+  if (actionLabel != nullptr) {
+    lv_label_set_text(actionLabel,
+                      ssh_.isEnabled() ? "DISABLE"
+                                       : ssh_.hasCredentials() ? "ENABLE" : "SET UP");
   }
 }
 
