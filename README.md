@@ -49,16 +49,22 @@ pio run --target clean
 pio run --target erase --upload-port /dev/cu.usbmodemXXXX
 ```
 
-The default firmware is the first offline appliance milestone. It initializes
+The default firmware is the first local hub-connection milestone. It initializes
 the verified display and touch paths, renders a local diagnostic UI, and keeps a
 bounded debug log visible on the screen. USB serial is only a development
 mirror; the firmware does not wait for a connected computer during startup.
 
 The Wi-Fi page can scan nearby networks, accept a password through the
 touchscreen keyboard, persist the selected network in NVS, and reconnect after
-future boots. SSH, power management, and the remaining peripheral services are
-added in later milestones. The UI deliberately reports those services as
-unavailable until they are implemented rather than presenting simulated status.
+future boots. The dashboard automatically registers with a discovered hub and
+opens its metrics stream without a pairing code or device token. Connection
+remains disabled until a generated Caddy CA trust anchor is compiled into the
+firmware.
+
+The server side of the vertical slice lives under `backend/`; its protocol is
+defined in `docs/protocol.md`. Start it with Docker Compose on the home server.
+The deployment and security boundaries are documented in `docs/deployment.md`
+and `docs/security.md`.
 
 The SSH page uses the fixed user name `nova`. Set a password on the touchscreen,
 enable SSH, and then connect from the same LAN with `ssh nova@DEVICE_IP`. The
@@ -74,10 +80,11 @@ powers the board off, and a click powers it on while charging.
 
 ## Remote Development
 
-The ESP32 is not a general-purpose build host. Develop and compile on the
-Mac, use SSH for diagnostics and controlled commands, and use OTA for firmware
-deployment. SSH enablement also enables the authenticated OTA endpoint on port
-3232.
+The ESP32 is not a general-purpose build host. Develop and compile on the Mac,
+use SSH for diagnostics and controlled commands, and use OTA for development
+firmware deployment. SSH enablement also enables the authenticated development
+OTA endpoint on port 3232; the `nova-production` profile disables both remote
+listeners.
 
 After one USB bootstrap flash containing OTA support, deploy subsequent builds
 without USB. ArduinoOTA uses UDP on port 3232:
@@ -100,6 +107,8 @@ debug session.
 - `firmware/`: Arduino application source (`src_dir` is intentionally mapped here)
 - `hardware/`: board notes and verified pin mappings
 - `docs/`: development documentation
+- `backend/`: FastAPI hub, SQLite store, tests, and Compose deployment
+- `infrastructure/`: host Avahi and encrypted backup configuration
 - `assets/`: firmware assets for future filesystem images
 - `scripts/`: host-side development utilities
 
