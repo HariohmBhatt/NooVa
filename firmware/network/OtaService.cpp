@@ -14,6 +14,11 @@ OtaService::OtaService(Logger& logger, WifiService& wifi, SshService& ssh)
     : logger_(logger), wifi_(wifi), ssh_(ssh) {}
 
 bool OtaService::begin() {
+#if defined(NOVA_PRODUCTION_BUILD)
+  ready_ = false;
+  logger_.write(LogLevel::Info, "Arduino OTA disabled in production firmware");
+  return true;
+#else
   preferencesReady_ = preferences_.begin("nova", true);
   credentialReady_ = preferencesReady_ && loadPassword();
   ready_ = credentialReady_;
@@ -21,9 +26,13 @@ bool OtaService::begin() {
     logger_.write(LogLevel::Debug, "OTA awaiting SSH credential setup");
   }
   return true;
+#endif
 }
 
 void OtaService::update() {
+#if defined(NOVA_PRODUCTION_BUILD)
+  return;
+#else
   if (!ready_ || !ssh_.isEnabled() || wifi_.state() != WifiState::Connected) {
     if (started_) {
       stop();
@@ -35,6 +44,7 @@ void OtaService::update() {
     start();
   }
   ArduinoOTA.handle();
+#endif
 }
 
 bool OtaService::isReady() const { return ready_; }

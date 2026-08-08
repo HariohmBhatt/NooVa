@@ -21,6 +21,12 @@ SshService::SshService(Logger& logger, WifiService& wifi)
     : logger_(logger), wifi_(wifi) {}
 
 bool SshService::begin() {
+#if defined(NOVA_PRODUCTION_BUILD)
+  enabled_ = false;
+  ready_ = false;
+  logger_.write(LogLevel::Info, "SSH disabled in production firmware");
+  return true;
+#else
   preferencesReady_ = preferences_.begin("nova", false);
   if (!preferencesReady_) {
     logger_.write(LogLevel::Error, "SSH settings storage unavailable");
@@ -49,12 +55,23 @@ bool SshService::begin() {
                 enabled_ ? "SSH enabled from persistent settings"
                          : "SSH disabled until touchscreen setup");
   return true;
+#endif
 }
 
-void SshService::update() {}
+void SshService::update() {
+#if defined(NOVA_PRODUCTION_BUILD)
+  enabled_ = false;
+#endif
+}
 
 bool SshService::configure(const char* username, const char* password,
                            bool persist) {
+#if defined(NOVA_PRODUCTION_BUILD)
+  (void)username;
+  (void)password;
+  (void)persist;
+  return false;
+#else
   if (username == nullptr || username[0] == '\0' || password == nullptr ||
       password[0] == '\0') {
     return false;
@@ -68,9 +85,15 @@ bool SshService::configure(const char* username, const char* password,
   }
   logger_.write(LogLevel::Info, "SSH credentials configured");
   return true;
+#endif
 }
 
 bool SshService::setEnabled(bool enabled, bool persist) {
+#if defined(NOVA_PRODUCTION_BUILD)
+  (void)enabled;
+  (void)persist;
+  return false;
+#else
   if (enabled && !credentialsReady_) {
     return false;
   }
@@ -88,6 +111,7 @@ bool SshService::setEnabled(bool enabled, bool persist) {
   logger_.write(enabled ? LogLevel::Info : LogLevel::Info,
                 enabled ? "SSH server enabling" : "SSH server disabling");
   return true;
+#endif
 }
 
 bool SshService::isEnabled() const { return enabled_; }
