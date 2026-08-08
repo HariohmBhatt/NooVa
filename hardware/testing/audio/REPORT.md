@@ -32,7 +32,7 @@ operator review remain pending.
 ## Execution Record
 
 - Date: 2026-08-08
-- Firmware commit: pending commit of HW-005 implementation
+- Firmware commit: `a11fe91`
 - Board serial: `1C:DB:D4:79:7D:AC`
 - Board MAC: `1c:db:d4:79:7d:ac`
 - Upload port: `/dev/cu.usbmodem2101`
