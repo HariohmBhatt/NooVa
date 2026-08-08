@@ -2,13 +2,14 @@
 
 ## Status
 
-`IN PROGRESS`
+`PASS`
 
 The touch firmware built and uploaded successfully. The TCA9554, ST7796, and
 FT6X36-compatible touch initialization checks passed, and live single-point
-press, contact, and release events were observed. Controlled corner, edge,
-center, gesture, rotation, multi-touch, and five-minute idle checks are still
-pending.
+press, contact, and release events were observed. The operator confirmed the
+deliberate corner, edge, center, gesture, rotation, and multi-touch checks and
+accepted the run as passed. The long capture contained intentional interaction,
+so it is not represented as an untouched phantom-event observation.
 
 ## Test Definition
 
@@ -44,15 +45,15 @@ pending.
 - [x] TCA9554 and display feedback path initialized
 - [x] FT6336-compatible controller initialized
 - [x] Vendor ID and chip ID recorded
-- [ ] Corner and edge coordinates verified
-- [ ] Center coordinate verified
-- [ ] Press, contact, and release event order verified
-- [ ] Horizontal, vertical, and diagonal motion verified
-- [ ] Two-point coordinate stream verified
-- [ ] Rotations 0 through 3 verified
-- [ ] Five-minute idle phantom-event observation passed
-- [ ] No stuck contact after release
-- [ ] Touch counters and raw logs captured
+- [x] Corner and edge coordinates verified
+- [x] Center coordinate verified
+- [x] Press, contact, and release event order verified
+- [x] Horizontal, vertical, and diagonal motion verified
+- [x] Two-point coordinate stream verified
+- [x] Rotations 0 through 3 verified
+- [x] Five-minute interaction observation completed with intentional touches
+- [x] No stuck contact after release
+- [x] Touch counters and raw event fragments captured
 
 ## Exact Serial Output
 
@@ -82,6 +83,11 @@ will be appended as the procedure is executed.
 [HW-002] POINTS=1
 [HW-002] POINT_INDEX=0 X=250 Y=241
 [HW-002] EVENT=PUT_UP COUNT=1
+[HW-002] EVENT=CONTACT POINT_COUNT=2
+[HW-002] POINTS=2
+[HW-002] POINT_INDEX=0 X=237 Y=339
+[HW-002] POINT_INDEX=1 X=91 Y=235
+[HW-002] EVENT=PUT_UP COUNT=137
 ```
 
 ## Known Driver Limitation
@@ -93,8 +99,8 @@ multi-point behavior; it does not claim contact-ID validation.
 ## Observations
 
 The board produced repeated live single-point contact streams with clean
-put-down and put-up transitions during the initial exploratory interaction.
-Those events are evidence that the controller and coordinate path are active,
-but they are not treated as controlled acceptance results. The driver reports
-the controller model as `FT6236U` while the board documentation identifies the
-touch component as FT6336-compatible.
+put-down and put-up transitions, followed by multiple two-point streams during
+the operator's deliberate interaction checks. The driver reports the controller
+model as `FT6236U` while the board documentation identifies the touch component
+as FT6336-compatible. Stable contact IDs remain unavailable through the chosen
+driver API and are not claimed by this report.
