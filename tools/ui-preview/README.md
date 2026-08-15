@@ -21,4 +21,5 @@ fixture data and does not connect to a real network.
 The page exposes `window.novaPreview` for browser smoke tests. It provides
 `state`, `openWifi()`, `selectNetwork(ssid)`, `connect()`, `reset()`, and
 `render()`; this helper is preview-only and is not part of the firmware
-protocol.
+protocol. The app also consumes the documented internal
+`window.NovaFixtures` object for deterministic display data.

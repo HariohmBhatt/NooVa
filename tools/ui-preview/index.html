@@ -17,64 +17,48 @@
               <span class="wordmark-mark" aria-hidden="true"></span>
               <span>NOVA</span>
             </div>
-            <div class="topbar-meta">
-              <span class="topbar-label">DEVICE</span>
-              <time id="clock" datetime="19:17">19:17</time>
-            </div>
+            <span class="topbar-label">DEVICE STATUS</span>
           </header>
 
           <div class="screen-content">
-            <section class="status-hero" aria-labelledby="status-heading">
-              <div class="status-kicker">
-                <span class="status-dot" id="status-dot" aria-hidden="true"></span>
-                <span id="status-label">NOT CONNECTED</span>
-              </div>
-              <h1 id="status-heading">Ready when<br />you are.</h1>
-              <p id="status-copy">Connect NOVA to Wi-Fi to bring this device online.</p>
-            </section>
-
             <section class="stats-card" aria-labelledby="stats-heading">
               <div class="section-heading">
                 <h2 id="stats-heading">Device stats</h2>
-                <span>LIVE</span>
               </div>
               <dl class="stats-list">
                 <div class="stat-row">
                   <dt>Wi-Fi</dt>
-                  <dd id="wifi-value">Not connected</dd>
+                  <dd id="wifi-value"></dd>
                 </div>
                 <div class="stat-row">
                   <dt>IP address</dt>
-                  <dd id="ip-value">—</dd>
+                  <dd id="ip-value"></dd>
                 </div>
                 <div class="stat-row">
                   <dt>Uptime</dt>
-                  <dd id="uptime-value">00:00:00</dd>
+                  <dd id="uptime-value"></dd>
                 </div>
                 <div class="stat-row">
                   <dt>Memory free</dt>
-                  <dd id="memory-value">6.8 MB</dd>
+                  <dd id="memory-value"></dd>
                 </div>
                 <div class="stat-row">
                   <dt>Temperature</dt>
-                  <dd id="temperature-value">32.4 °C</dd>
+                  <dd id="temperature-value"></dd>
                 </div>
                 <div class="stat-row">
                   <dt>Firmware</dt>
-                  <dd id="firmware-value">0.1.0</dd>
+                  <dd id="firmware-value"></dd>
                 </div>
               </dl>
             </section>
-
-            <p class="updated-line">Updated <span id="updated-value">just now</span></p>
           </div>
 
           <footer class="screen-actions">
             <button class="primary-action" id="wifi-action" type="button">
-              <span id="wifi-action-label">Connect to Wi-Fi</span>
+              <span>Connect to Wi-Fi</span>
               <span class="action-arrow" aria-hidden="true">↗</span>
             </button>
-            <p>Local setup · no account required</p>
           </footer>
 
           <section

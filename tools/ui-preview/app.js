@@ -6,26 +6,20 @@
   const state = {
     connected: false,
     selectedNetwork: "",
+    connectedNetwork: "",
     sheetOpen: false,
     passwordStep: false,
   };
 
   function cacheElements() {
     const ids = [
-      "clock",
-      "status-dot",
-      "status-label",
-      "status-heading",
-      "status-copy",
       "wifi-value",
       "ip-value",
       "uptime-value",
       "memory-value",
       "temperature-value",
       "firmware-value",
-      "updated-value",
       "wifi-action",
-      "wifi-action-label",
       "wifi-sheet",
       "wifi-close",
       "network-step",
@@ -42,24 +36,13 @@
   }
 
   function renderStats() {
-    const connected = state.connected;
-    elements["clock"].textContent = fixtures.clock;
-    elements["status-dot"].classList.toggle("is-connected", connected);
-    elements["status-label"].textContent = connected ? "CONNECTED" : "NOT CONNECTED";
-    elements["status-heading"].innerHTML = connected
-      ? "All systems<br />ready."
-      : "Ready when<br />you are.";
-    elements["status-copy"].textContent = connected
-      ? fixtures.connected.statusCopy
-      : fixtures.disconnected.statusCopy;
-    elements["wifi-value"].textContent = connected ? fixtures.connected.network : "Not connected";
-    elements["ip-value"].textContent = connected ? fixtures.connected.ipAddress : "—";
-    elements["uptime-value"].textContent = connected ? "02:14:08" : fixtures.stats.uptime;
-    elements["memory-value"].textContent = connected ? "6.4 MB" : fixtures.stats.memoryFree;
-    elements["temperature-value"].textContent = connected ? "33.1 °C" : fixtures.stats.temperature;
-    elements["firmware-value"].textContent = `v${fixtures.stats.firmware}`;
-    elements["updated-value"].textContent = connected ? "a moment ago" : "just now";
-    elements["wifi-action-label"].textContent = connected ? "Change Wi-Fi" : "Connect to Wi-Fi";
+    const stats = state.connected ? fixtures.stats.connected : fixtures.stats.disconnected;
+    elements["wifi-value"].textContent = state.connected ? state.connectedNetwork : stats.wifi;
+    elements["ip-value"].textContent = stats.ipAddress;
+    elements["uptime-value"].textContent = stats.uptime;
+    elements["memory-value"].textContent = stats.memoryFree;
+    elements["temperature-value"].textContent = stats.temperature;
+    elements["firmware-value"].textContent = stats.firmware;
   }
 
   function renderNetworks() {
@@ -111,20 +94,36 @@
   }
 
   function selectNetwork(ssid) {
+    const network = fixtures.networks.find((candidate) => candidate.ssid === ssid);
+    if (!network) {
+      return;
+    }
+
     state.selectedNetwork = ssid;
+    if (!network.secure) {
+      connectSelectedNetwork();
+      return;
+    }
+
     state.passwordStep = true;
     renderSheet();
   }
 
-  function connectWifi(event) {
-    event.preventDefault();
+  function connectSelectedNetwork() {
     state.connected = true;
+    state.connectedNetwork = state.selectedNetwork;
     closeWifi();
     renderStats();
   }
 
+  function connectWifi(event) {
+    event.preventDefault();
+    connectSelectedNetwork();
+  }
+
   function reset() {
     state.connected = false;
+    state.connectedNetwork = "";
     state.sheetOpen = false;
     state.passwordStep = false;
     state.selectedNetwork = "";

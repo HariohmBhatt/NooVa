@@ -10,9 +10,6 @@
   --muted: #91a49a;
   --faint: #667b70;
   --mint: #ace8c8;
-  --mint-deep: #23533e;
-  --warning: #e4b56d;
-  --radius-lg: 28px;
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
@@ -96,18 +93,8 @@ button {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07), inset 0 0 42px rgba(108, 198, 155, 0.04);
 }
 
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 53px;
-  padding: 0 17px;
-  border-bottom: 1px solid var(--screen-line);
-}
-
+.topbar,
 .wordmark,
-.topbar-meta,
-.status-kicker,
 .section-heading,
 .stat-row,
 .sheet-header,
@@ -115,6 +102,13 @@ button {
 .primary-action {
   display: flex;
   align-items: center;
+}
+
+.topbar {
+  justify-content: space-between;
+  height: 53px;
+  padding: 0 17px;
+  border-bottom: 1px solid var(--screen-line);
 }
 
 .wordmark {
@@ -133,98 +127,34 @@ button {
   transform: rotate(-12deg);
 }
 
-.topbar-meta {
-  gap: 9px;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-}
-
 .topbar-label {
   color: var(--faint);
+  font-family: var(--font-mono);
   font-size: 8px;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
 }
 
 .screen-content {
-  padding: 22px 17px 0;
-}
-
-.status-hero {
-  padding: 0 1px;
-}
-
-.status-kicker {
-  gap: 7px;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-}
-
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warning);
-  box-shadow: 0 0 0 4px rgba(228, 181, 109, 0.1);
-}
-
-.status-dot.is-connected {
-  background: var(--mint);
-  box-shadow: 0 0 0 4px rgba(172, 232, 200, 0.1);
-}
-
-h1,
-h2,
-p {
-  margin: 0;
-}
-
-h1 {
-  margin-top: 10px;
-  color: var(--text);
-  font-size: 30px;
-  font-weight: 660;
-  letter-spacing: -0.055em;
-  line-height: 0.96;
-}
-
-.status-hero p {
-  max-width: 242px;
-  margin-top: 11px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.45;
+  padding: 27px 17px 0;
 }
 
 .stats-card {
-  margin-top: 18px;
-  padding: 12px 13px 9px;
+  padding: 15px 13px 9px;
   border: 1px solid var(--screen-line);
   border-radius: 16px;
   background: var(--screen-raised);
 }
 
 .section-heading {
-  justify-content: space-between;
-  padding-bottom: 8px;
+  padding-bottom: 10px;
 }
 
 .section-heading h2 {
+  margin: 0;
   color: var(--text);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 720;
-  letter-spacing: 0.04em;
-}
-
-.section-heading span {
-  color: var(--mint);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.01em;
 }
 
 .stats-list {
@@ -233,7 +163,7 @@ h1 {
 
 .stat-row {
   justify-content: space-between;
-  min-height: 27px;
+  min-height: 35px;
   border-top: 1px solid rgba(145, 164, 154, 0.14);
   gap: 12px;
 }
@@ -241,7 +171,7 @@ h1 {
 .stat-row dt,
 .stat-row dd {
   margin: 0;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .stat-row dt {
@@ -255,23 +185,10 @@ h1 {
   text-align: right;
 }
 
-.updated-line {
-  margin: 10px 2px 0;
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.06em;
-  text-align: right;
-}
-
-.updated-line span {
-  color: var(--muted);
-}
-
 .screen-actions {
   position: absolute;
   right: 17px;
-  bottom: 15px;
+  bottom: 17px;
   left: 17px;
 }
 
@@ -279,7 +196,7 @@ h1 {
 .connect-button {
   justify-content: space-between;
   width: 100%;
-  min-height: 45px;
+  min-height: 48px;
   padding: 0 14px;
   border: 0;
   border-radius: 12px;
@@ -312,14 +229,6 @@ h1 {
   line-height: 1;
 }
 
-.screen-actions p {
-  margin-top: 8px;
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  text-align: center;
-}
-
 .wifi-sheet {
   position: absolute;
   z-index: 4;
@@ -336,6 +245,7 @@ h1 {
 }
 
 .sheet-kicker {
+  margin: 0;
   color: var(--mint);
   font-family: var(--font-mono);
   font-size: 8px;
@@ -344,7 +254,7 @@ h1 {
 }
 
 .sheet-header h2 {
-  margin-top: 7px;
+  margin: 7px 0 0;
   font-size: 22px;
   letter-spacing: -0.04em;
 }
