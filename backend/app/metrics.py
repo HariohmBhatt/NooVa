@@ -1,14 +1,19 @@
 """Read-only host metrics for the terminal health stream."""
 
 from dataclasses import dataclass
-import os
 from pathlib import Path
 import shutil
 import time
 
 
+DEFAULT_MAX_NETWORK_WINDOW_SECONDS = 30.0
+MIN_PERCENTAGE = 0.0
+MAX_PERCENTAGE = 100.0
+
+
 @dataclass
 class _NetworkSample:
+    interface: str
     received: int
     transmitted: int
     measured_at: float
@@ -23,11 +28,15 @@ class HostMetricsCollector:
         sys_root: Path = Path("/sys"),
         disk_root: Path = Path("/"),
         interface: str | None = None,
+        max_network_window_seconds: float = DEFAULT_MAX_NETWORK_WINDOW_SECONDS,
     ) -> None:
+        if max_network_window_seconds <= 0:
+            raise ValueError("max_network_window_seconds must be positive")
         self.proc_root = proc_root
         self.sys_root = sys_root
         self.disk_root = disk_root
         self.configured_interface = interface
+        self.max_network_window_seconds = max_network_window_seconds
         self._cpu_sample: tuple[int, int] | None = None
         self._network_sample: _NetworkSample | None = None
 
@@ -44,6 +53,8 @@ class HostMetricsCollector:
         return metrics
 
     def _collect_cpu(self, metrics: dict[str, object], errors: list[str]) -> None:
+        metrics["cpu_warmup"] = True
+        metrics["cpu_percent"] = None
         try:
             fields = self._read_text(self.proc_root / "stat").splitlines()[0].split()
             values = [int(value) for value in fields[1:]
@@ -51,17 +62,28 @@ class HostMetricsCollector:
             idle = values[3] + (values[4] if len(values) > 4 else 0)
             total = sum(values)
             if self._cpu_sample is None:
-                load = float(self._read_text(self.proc_root / "loadavg").split()[0])
-                metrics["cpu_percent"] = round(min(100.0, load / max(os.cpu_count() or 1, 1) * 100), 1)
-            else:
-                previous_total, previous_idle = self._cpu_sample
-                total_delta = total - previous_total
-                idle_delta = idle - previous_idle
-                metrics["cpu_percent"] = round(
-                    max(0.0, min(100.0, (total_delta - idle_delta) / max(total_delta, 1) * 100)),
-                    1,
-                )
+                self._cpu_sample = (total, idle)
+                return
+
+            previous_total, previous_idle = self._cpu_sample
+            total_delta = total - previous_total
+            idle_delta = idle - previous_idle
             self._cpu_sample = (total, idle)
+            if total_delta <= 0 or idle_delta < 0:
+                return
+            metrics["cpu_percent"] = round(
+                max(
+                    MIN_PERCENTAGE,
+                    min(
+                        MAX_PERCENTAGE,
+                        (total_delta - min(idle_delta, total_delta))
+                        / total_delta
+                        * MAX_PERCENTAGE,
+                    ),
+                ),
+                1,
+            )
+            metrics["cpu_warmup"] = False
         except (OSError, IndexError, ValueError) as error:
             errors.append(f"cpu:{type(error).__name__}")
 
@@ -75,6 +97,7 @@ class HostMetricsCollector:
             available = values["MemAvailable"]
             metrics["memory_total_bytes"] = total
             metrics["memory_used_bytes"] = total - available
+            metrics["memory_used_percent"] = self._percentage(total - available, total)
         except (OSError, KeyError, IndexError, ValueError) as error:
             errors.append(f"memory:{type(error).__name__}")
 
@@ -83,10 +106,13 @@ class HostMetricsCollector:
             usage = shutil.disk_usage(self.disk_root)
             metrics["disk_total_bytes"] = usage.total
             metrics["disk_used_bytes"] = usage.used
+            metrics["disk_used_percent"] = self._percentage(usage.used, usage.total)
         except OSError as error:
             errors.append(f"disk:{type(error).__name__}")
 
     def _collect_network(self, metrics: dict[str, object], errors: list[str]) -> None:
+        metrics["network_warmup"] = True
+        metrics["network_window_capped"] = False
         try:
             interface = self.configured_interface or self._default_interface()
             received, transmitted = self._interface_bytes(interface)
@@ -94,18 +120,31 @@ class HostMetricsCollector:
             metrics["network_interface"] = interface
             metrics["network_rx_bytes_total"] = received
             metrics["network_tx_bytes_total"] = transmitted
-            if self._network_sample is not None:
-                elapsed = max(now - self._network_sample.measured_at, 0.001)
+            previous = self._network_sample
+            if previous is not None and previous.interface == interface:
+                elapsed = now - previous.measured_at
+                counters_advanced = (
+                    received >= previous.received
+                    and transmitted >= previous.transmitted
+                )
+            else:
+                elapsed = 0.0
+                counters_advanced = False
+
+            if previous is not None and counters_advanced and elapsed > 0:
+                rate_window = min(elapsed, self.max_network_window_seconds)
+                metrics["network_window_capped"] = elapsed > rate_window
                 metrics["network_rx_bytes_per_second"] = round(
-                    max(0, received - self._network_sample.received) / elapsed, 1
+                    (received - previous.received) / rate_window, 1
                 )
                 metrics["network_tx_bytes_per_second"] = round(
-                    max(0, transmitted - self._network_sample.transmitted) / elapsed, 1
+                    (transmitted - previous.transmitted) / rate_window, 1
                 )
+                metrics["network_warmup"] = elapsed > self.max_network_window_seconds
             else:
                 metrics["network_rx_bytes_per_second"] = 0.0
                 metrics["network_tx_bytes_per_second"] = 0.0
-            self._network_sample = _NetworkSample(received, transmitted, now)
+            self._network_sample = _NetworkSample(interface, received, transmitted, now)
         except (OSError, KeyError, IndexError, ValueError) as error:
             errors.append(f"network:{type(error).__name__}")
 
@@ -158,6 +197,15 @@ class HostMetricsCollector:
             fields = raw.split()
             return int(fields[0]), int(fields[8])
         raise KeyError(interface)
+
+    @staticmethod
+    def _percentage(value: int, total: int) -> float | None:
+        if total <= 0:
+            return None
+        return round(
+            max(MIN_PERCENTAGE, min(MAX_PERCENTAGE, value / total * MAX_PERCENTAGE)),
+            1,
+        )
 
     @staticmethod
     def _read_text(path: Path) -> str:
