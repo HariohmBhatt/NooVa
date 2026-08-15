@@ -25,6 +25,14 @@
       cpu: Object.freeze([28, 44, 36, 61, 48, 72, 52]),
       gpu: Object.freeze([12, 26, 18, 39, 31, 55, 38]),
     }),
+    chart: Object.freeze({
+      width: 288,
+      height: 64,
+      plotTop: 8,
+      plotHeight: 48,
+      maxValue: 100,
+      gridY: Object.freeze([8, 32, 56]),
+    }),
     networks: Object.freeze([
       Object.freeze({ ssid: "Nova-24G", signal: "Strong", secure: true }),
       Object.freeze({ ssid: "Home network", signal: "Good", secure: true }),

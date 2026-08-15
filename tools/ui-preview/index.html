@@ -29,13 +29,12 @@
               <svg
                 class="telemetry-chart"
                 id="utilisation-chart"
-                viewBox="0 0 288 64"
                 role="img"
                 aria-label="CPU and GPU utilisation over the last ten minutes"
               >
-                <line class="chart-grid" x1="0" y1="8" x2="288" y2="8"></line>
-                <line class="chart-grid" x1="0" y1="32" x2="288" y2="32"></line>
-                <line class="chart-grid" x1="0" y1="56" x2="288" y2="56"></line>
+                <line class="chart-grid" id="chart-grid-0"></line>
+                <line class="chart-grid" id="chart-grid-1"></line>
+                <line class="chart-grid" id="chart-grid-2"></line>
                 <polyline class="chart-line cpu-line" id="cpu-line" points=""></polyline>
                 <polyline class="chart-line gpu-line" id="gpu-line" points=""></polyline>
               </svg>

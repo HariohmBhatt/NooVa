@@ -1,10 +1,6 @@
 (() => {
   "use strict";
 
-  const CHART_WIDTH = 288;
-  const CHART_TOP = 8;
-  const CHART_HEIGHT = 48;
-  const UTILISATION_MAX = 100;
   const fixtures = window.NovaFixtures;
   const elements = {};
   const state = {
@@ -28,6 +24,9 @@
       "utilisation-chart",
       "cpu-line",
       "gpu-line",
+      "chart-grid-0",
+      "chart-grid-1",
+      "chart-grid-2",
       "cpu-current",
       "gpu-current",
       "wifi-action",
@@ -46,8 +45,12 @@
     });
   }
 
+  function currentStats() {
+    return state.connected ? fixtures.stats.connected : fixtures.stats.disconnected;
+  }
+
   function renderStats() {
-    const stats = state.connected ? fixtures.stats.connected : fixtures.stats.disconnected;
+    const stats = currentStats();
     elements["wifi-value"].textContent = state.connected ? state.connectedNetwork : stats.wifi;
     elements["ip-value"].textContent = stats.ipAddress;
     elements["cpu-value"].textContent = stats.cpu;
@@ -59,18 +62,28 @@
   }
 
   function chartPoints(values) {
-    const step = CHART_WIDTH / (values.length - 1);
+    const chart = fixtures.chart;
+    const step = chart.width / (values.length - 1);
     return values
       .map((value, index) => {
         const x = index * step;
-        const y = CHART_TOP + ((UTILISATION_MAX - value) / UTILISATION_MAX) * CHART_HEIGHT;
+        const y = chart.plotTop + ((chart.maxValue - value) / chart.maxValue) * chart.plotHeight;
         return `${x.toFixed(1)},${y.toFixed(1)}`;
       })
       .join(" ");
   }
 
   function renderTelemetry() {
-    const stats = state.connected ? fixtures.stats.connected : fixtures.stats.disconnected;
+    const chart = fixtures.chart;
+    const stats = currentStats();
+    elements["utilisation-chart"].setAttribute("viewBox", `0 0 ${chart.width} ${chart.height}`);
+    chart.gridY.forEach((y, index) => {
+      const line = elements[`chart-grid-${index}`];
+      line.setAttribute("x1", "0");
+      line.setAttribute("y1", String(y));
+      line.setAttribute("x2", String(chart.width));
+      line.setAttribute("y2", String(y));
+    });
     elements["cpu-line"].setAttribute("points", chartPoints(fixtures.telemetry.cpu));
     elements["gpu-line"].setAttribute("points", chartPoints(fixtures.telemetry.gpu));
     elements["cpu-current"].textContent = stats.cpu;
