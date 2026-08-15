@@ -9,6 +9,7 @@
 #include <ctime>
 
 #include "HubTrustAnchor.h"
+#include "../telemetry/DeviceTelemetryCollector.h"
 
 namespace nova {
 namespace {
@@ -23,8 +24,12 @@ constexpr char kPreferenceDevice[] = "hub_device";
 constexpr char kLegacyPreferenceToken[] = "hub_token";
 constexpr char kPreferenceNonce[] = "hub_nonce";
 constexpr char kFirmwareVersion[] = "0.1.0";
+constexpr char kDeviceMetricsCapability[] = "device_metrics_v1";
 constexpr size_t kRegistrationDocumentCapacity = 512;
 constexpr size_t kRegistrationBodyCapacity = 512;
+constexpr size_t kDeviceMetricsDocumentCapacity = 768;
+constexpr size_t kDeviceMetricsBodyCapacity = 768;
+constexpr uint32_t kPingPeriodMs = 10000;
 
 bool hasText(const char* value) { return value != nullptr && value[0] != '\0'; }
 
@@ -41,10 +46,57 @@ void writeTimestamp(char* output, size_t capacity) {
            utc.tm_min, utc.tm_sec);
 }
 
+bool hasCapability(JsonArrayConst capabilities, const char* capability) {
+  for (JsonVariantConst item : capabilities) {
+    if (strcmp(item | "", capability) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+HealthGrade parseHealthGrade(const char* value, const char* dependencyStatus) {
+  if (strcmp(value, "normal") == 0) {
+    return HealthGrade::Normal;
+  }
+  if (strcmp(value, "critical") == 0) {
+    return HealthGrade::Critical;
+  }
+  if (strcmp(value, "warning") == 0) {
+    return HealthGrade::Warning;
+  }
+  return strcmp(dependencyStatus, "healthy") == 0 ? HealthGrade::Normal
+                                                   : HealthGrade::Warning;
+}
+
+uint8_t copyTrend(JsonArrayConst values, float* destination, size_t capacity) {
+  const size_t count = values.size() < capacity ? values.size() : capacity;
+  for (size_t index = 0; index < count; ++index) {
+    destination[index] = values[index] | 0.0F;
+  }
+  return static_cast<uint8_t>(count);
+}
+
 }  // namespace
+
+const char* healthGradeName(HealthGrade grade) {
+  switch (grade) {
+    case HealthGrade::Normal:
+      return "normal";
+    case HealthGrade::Warning:
+      return "warning";
+    case HealthGrade::Critical:
+      return "critical";
+  }
+  return "warning";
+}
 
 HubConnectionService::HubConnectionService(Logger& logger, WifiService& wifi)
     : logger_(logger), wifi_(wifi) {}
+
+HubConnectionService::HubConnectionService(Logger& logger, WifiService& wifi,
+                                           DeviceTelemetryCollector& telemetry)
+    : logger_(logger), wifi_(wifi), telemetryCollector_(&telemetry) {}
 
 bool HubConnectionService::begin() {
   preferencesReady_ = preferences_.begin("nova", false);
@@ -81,6 +133,7 @@ void HubConnectionService::update() {
       socketStarted_ = false;
       socketConnected_ = false;
       sessionReady_ = false;
+      telemetryAcknowledged_ = false;
     }
     if (isRegistered()) {
       state_ = HubState::Offline;
@@ -117,8 +170,12 @@ void HubConnectionService::update() {
   }
   if (socketStarted_) {
     websocket_.loop();
-    if (sessionReady_ && now - lastPingAt_ >= 10000) {
+    if (sessionReady_ && now - lastPingAt_ >= kPingPeriodMs) {
       sendPing();
+    }
+    if (sessionReady_ && telemetryAcknowledged_ &&
+        now - lastTelemetryAt_ >= DeviceTelemetryCollector::kCadenceMs) {
+      sendDeviceMetrics();
     }
   }
   updateFreshness(now);
@@ -184,6 +241,7 @@ bool HubConnectionService::registerDevice() {
     capabilities.add("display");
     capabilities.add("microphone");
     capabilities.add("speaker");
+    capabilities.add(kDeviceMetricsCapability);
     char body[kRegistrationBodyCapacity] = {};
     serializeJson(request, body, sizeof(body));
     http.addHeader("Content-Type", "application/json");
@@ -250,6 +308,7 @@ void HubConnectionService::clearRegistration() {
   socketStarted_ = false;
   socketConnected_ = false;
   sessionReady_ = false;
+  telemetryAcknowledged_ = false;
   registrationComplete_ = false;
   eraseRegistrationIdentity();
   health_ = {};
@@ -316,6 +375,7 @@ void HubConnectionService::handleSocketEvent(HubConnectionService* service,
     case WStype_CONNECTED:
       service->socketConnected_ = true;
       service->sessionReady_ = false;
+      service->telemetryAcknowledged_ = false;
       service->state_ = HubState::Connecting;
       service->logger_.write(LogLevel::Info, "[HUB] WSS connected; sending hello");
       service->sendHello();
@@ -329,6 +389,7 @@ void HubConnectionService::handleSocketEvent(HubConnectionService* service,
                               static_cast<unsigned>(type));
       service->socketConnected_ = false;
       service->sessionReady_ = false;
+      service->telemetryAcknowledged_ = false;
       if (service->isRegistered() &&
           service->state_ != HubState::UpdateRequired) {
         service->state_ = HubState::Offline;
@@ -446,10 +507,45 @@ bool HubConnectionService::sendHello() {
   capabilities.add("display");
   capabilities.add("microphone");
   capabilities.add("speaker");
+  capabilities.add(kDeviceMetricsCapability);
   char body[1536] = {};
   serializeJson(message, body, sizeof(body));
   const bool sent = websocket_.sendTXT(body);
   logger_.writef(LogLevel::Info, "[HUB] hello sent=%d", sent);
+  return sent;
+}
+
+bool HubConnectionService::sendDeviceMetrics() {
+  if (telemetryCollector_ == nullptr || !telemetryAcknowledged_ ||
+      !sessionReady_ || !socketConnected_) {
+    return false;
+  }
+  StaticJsonDocument<kDeviceMetricsDocumentCapacity> message;
+  message["protocol_version"] = 1;
+  message["type"] = "device.metrics";
+  char timestamp[32] = {};
+  writeTimestamp(timestamp, sizeof(timestamp));
+  message["timestamp"] = timestamp;
+  DeviceTelemetrySnapshot sample;
+  telemetryCollector_->collect(sample);
+  JsonObject payload = message["payload"].to<JsonObject>();
+  payload["sequence"] = sample.sequence;
+  payload["uptime_seconds"] = sample.uptimeSeconds;
+  payload["wifi_rssi_dbm"] = sample.wifiRssiDbm;
+  payload["free_heap_bytes"] = sample.freeHeapBytes;
+  payload["touch_ready"] = sample.touchReady;
+  payload["touch_active"] = sample.touchActive;
+  payload["audio_state"] = sample.audioState;
+  char body[kDeviceMetricsBodyCapacity] = {};
+  if (measureJson(message) >= sizeof(body)) {
+    logger_.write(LogLevel::Error, "[HUB] device metrics frame too large");
+    return false;
+  }
+  serializeJson(message, body, sizeof(body));
+  lastTelemetryAt_ = millis();
+  const bool sent = websocket_.sendTXT(body);
+  logger_.writef(LogLevel::Debug, "[HUB] device metrics sequence=%lu sent=%d",
+                 static_cast<unsigned long>(sample.sequence), sent);
   return sent;
 }
 
@@ -481,7 +577,13 @@ bool HubConnectionService::handleMessage(const uint8_t* payload, size_t length) 
   }
   if (strcmp(type, "session.ready") == 0) {
     sessionReady_ = true;
-    logger_.write(LogLevel::Info, "[HUB] session ready");
+    const JsonObjectConst readyPayload =
+        message["payload"].as<JsonObjectConst>();
+    telemetryAcknowledged_ = telemetryCollector_ != nullptr &&
+                             telemetryWasAcknowledged(readyPayload);
+    lastTelemetryAt_ = millis() - DeviceTelemetryCollector::kCadenceMs;
+    logger_.writef(LogLevel::Info, "[HUB] session ready device-metrics=%d",
+                   telemetryAcknowledged_);
     return true;
   }
   if (strcmp(type, "health.snapshot") == 0) {
@@ -502,11 +604,29 @@ bool HubConnectionService::handleMessage(const uint8_t* payload, size_t length) 
   return true;
 }
 
+bool HubConnectionService::telemetryWasAcknowledged(
+    JsonObjectConst payload) const {
+  if ((payload["device_metrics_v1"] | false) ||
+      (payload["device_metrics"] | false)) {
+    return true;
+  }
+  const JsonObjectConst telemetry = payload["telemetry"].as<JsonObjectConst>();
+  if (telemetry["device_metrics_v1"] | false) {
+    return true;
+  }
+  return hasCapability(payload["capabilities"].as<JsonArrayConst>(),
+                       kDeviceMetricsCapability) ||
+         hasCapability(payload["accepted_capabilities"].as<JsonArrayConst>(),
+                       kDeviceMetricsCapability);
+}
+
 bool HubConnectionService::handleHealth(JsonObjectConst payload,
                                         const char* timestamp) {
   health_.valid = true;
   copyText(health_.dependencyStatus, sizeof(health_.dependencyStatus),
            payload["dependency_status"] | "degraded");
+  health_.healthGrade = parseHealthGrade(payload["health_grade"] | "",
+                                          health_.dependencyStatus);
   copyText(health_.serverVersion, sizeof(health_.serverVersion),
            payload["server_version"] | "unknown");
   copyText(health_.serverTime, sizeof(health_.serverTime),
@@ -534,9 +654,20 @@ bool HubConnectionService::handleHealth(JsonObjectConst payload,
   if (payload["collection_errors"].size() > 0) {
     copyText(health_.error, sizeof(health_.error), "host metric collection degraded");
   }
-  state_ = strcmp(health_.dependencyStatus, "healthy") == 0
-               ? HubState::Live
-               : HubState::Degraded;
+  const JsonObjectConst trends = payload["trends"].as<JsonObjectConst>();
+  health_.trends.periodSeconds = trends["period_seconds"] | 0U;
+  health_.trends.cpuPointCount = copyTrend(
+      trends["cpu_percent"].as<JsonArrayConst>(), health_.trends.cpuPercent,
+      HubHealthTrends::kMaxPoints);
+  health_.trends.memoryPointCount = copyTrend(
+      trends["memory_used_percent"].as<JsonArrayConst>(),
+      health_.trends.memoryUsedPercent, HubHealthTrends::kMaxPoints);
+  health_.trends.diskPointCount = copyTrend(
+      trends["disk_used_percent"].as<JsonArrayConst>(), health_.trends.diskUsedPercent,
+      HubHealthTrends::kMaxPoints);
+  if (socketConnected_) {
+    state_ = HubState::Live;
+  }
   return true;
 }
 

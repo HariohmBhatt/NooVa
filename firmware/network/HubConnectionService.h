@@ -14,6 +14,8 @@
 
 namespace nova {
 
+class DeviceTelemetryCollector;
+
 /** Connection and freshness states shown by the terminal dashboard. */
 enum class HubState : uint8_t {
   Unconfigured,
@@ -22,15 +24,40 @@ enum class HubState : uint8_t {
   Connecting,
   Live,
   Stale,
+  // Retained for source compatibility; health grade is no longer a HubState.
   Degraded,
   Offline,
   UpdateRequired,
   Error,
 };
 
+/** Graded health reported by the hub independently of transport freshness. */
+enum class HealthGrade : uint8_t {
+  Normal,
+  Warning,
+  Critical,
+};
+
+/** Return the protocol name for a health grade. */
+const char* healthGradeName(HealthGrade grade);
+
+/** Bounded server metric trends carried by a health snapshot. */
+struct HubHealthTrends {
+  static constexpr size_t kMaxPoints = 16;
+
+  uint32_t periodSeconds = 0;
+  uint8_t cpuPointCount = 0;
+  uint8_t memoryPointCount = 0;
+  uint8_t diskPointCount = 0;
+  float cpuPercent[kMaxPoints] = {};
+  float memoryUsedPercent[kMaxPoints] = {};
+  float diskUsedPercent[kMaxPoints] = {};
+};
+
 /** Latest server health values rendered by the terminal dashboard. */
 struct HubHealthSnapshot {
   bool valid = false;
+  HealthGrade healthGrade = HealthGrade::Warning;
   char dependencyStatus[12] = {};
   char serverVersion[24] = {};
   char serverTime[32] = {};
@@ -49,6 +76,7 @@ struct HubHealthSnapshot {
   float uptimeSeconds = 0.0F;
   uint32_t latencyMs = 0;
   uint32_t receivedAtMs = 0;
+  HubHealthTrends trends = {};
   char error[64] = {};
 };
 
@@ -56,8 +84,12 @@ class HubConnectionService {
  public:
   static constexpr uint16_t kDefaultPort = 443;
 
-  /** Construct the local terminal connection to the NOVA hub. */
+  /** Construct the local terminal connection without upstream telemetry. */
   HubConnectionService(Logger& logger, WifiService& wifi);
+
+  /** Construct the connection with a collector that outlives this service. */
+  HubConnectionService(Logger& logger, WifiService& wifi,
+                        DeviceTelemetryCollector& telemetry);
 
   /** Load registration state and prepare the fail-closed TLS client. */
   bool begin();
@@ -116,8 +148,10 @@ class HubConnectionService {
   bool startSocket();
   bool sendHello();
   bool sendPing();
+  bool sendDeviceMetrics();
   bool handleMessage(const uint8_t* payload, size_t length);
   bool handleHealth(JsonObjectConst payload, const char* timestamp);
+  bool telemetryWasAcknowledged(JsonObjectConst payload) const;
   void eraseRegistrationIdentity();
   void updateFreshness(uint32_t now);
   void setError(const char* message);
@@ -138,10 +172,12 @@ class HubConnectionService {
   uint32_t lastRegistrationAt_ = 0;
   uint32_t socketStartedAt_ = 0;
   uint32_t lastPingAt_ = 0;
+  uint32_t lastTelemetryAt_ = 0;
   bool preferencesReady_ = false;
   bool socketStarted_ = false;
   bool socketConnected_ = false;
   bool sessionReady_ = false;
+  bool telemetryAcknowledged_ = false;
   bool discoveryReady_ = false;
   bool mdnsStarted_ = false;
   bool timeSyncStarted_ = false;
@@ -149,6 +185,7 @@ class HubConnectionService {
   bool clockWaitingLogged_ = false;
   bool clockReadyLogged_ = false;
   bool servicePaused_ = false;
+  DeviceTelemetryCollector* telemetryCollector_ = nullptr;
 };
 
 }  // namespace nova

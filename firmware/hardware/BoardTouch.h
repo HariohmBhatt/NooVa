@@ -26,9 +26,13 @@ class BoardTouch {
   /** Return whether touch initialization succeeded. */
   bool isReady() const;
 
+  /** Return the most recently sampled pressed state without reading hardware. */
+  bool isPressed() const;
+
  private:
   TouchDrvFT6X36 touch_;
   bool ready_ = false;
+  bool pressed_ = false;
 };
 
 }  // namespace nova
