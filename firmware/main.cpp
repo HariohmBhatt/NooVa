@@ -8,6 +8,7 @@
 #include "network/SshService.h"
 #include "network/WifiService.h"
 #include "network/OtaService.h"
+#include "telemetry/DeviceTelemetryCollector.h"
 #include "ui/UiController.h"
 
 namespace {
@@ -20,7 +21,8 @@ nova::ButtonService gButtons(gLogger);
 nova::BoardDisplay gDisplay;
 nova::BoardTouch gTouch;
 nova::WifiService gWifi(gLogger);
-nova::HubConnectionService gHub(gLogger, gWifi);
+nova::DeviceTelemetryCollector gTelemetry(gWifi, gTouch);
+nova::HubConnectionService gHub(gLogger, gWifi, gTelemetry);
 nova::SshService gSsh(gLogger, gWifi);
 nova::OtaService gOta(gLogger, gWifi, gSsh);
 nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gSsh, gHub);

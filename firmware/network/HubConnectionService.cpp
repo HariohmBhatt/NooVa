@@ -77,6 +77,19 @@ uint8_t copyTrend(JsonArrayConst values, float* destination, size_t capacity) {
   return static_cast<uint8_t>(count);
 }
 
+uint8_t copyActiveAlerts(JsonArrayConst values, HubActiveAlert* destination,
+                         size_t capacity) {
+  const size_t count = values.size() < capacity ? values.size() : capacity;
+  for (size_t index = 0; index < count; ++index) {
+    const JsonObjectConst alert = values[index].as<JsonObjectConst>();
+    snprintf(destination[index].metric, sizeof(destination[index].metric), "%s",
+             alert["metric"] | "unknown");
+    destination[index].state = parseHealthGrade(alert["state"] | "", "degraded");
+    destination[index].value = alert["value"] | 0.0F;
+  }
+  return static_cast<uint8_t>(count);
+}
+
 }  // namespace
 
 const char* healthGradeName(HealthGrade grade) {
@@ -665,6 +678,9 @@ bool HubConnectionService::handleHealth(JsonObjectConst payload,
   health_.trends.diskPointCount = copyTrend(
       trends["disk_used_percent"].as<JsonArrayConst>(), health_.trends.diskUsedPercent,
       HubHealthTrends::kMaxPoints);
+  health_.activeAlertCount = copyActiveAlerts(
+      payload["active_alerts"].as<JsonArrayConst>(), health_.activeAlerts,
+      HubHealthSnapshot::kMaxActiveAlerts);
   if (socketConnected_) {
     state_ = HubState::Live;
   }

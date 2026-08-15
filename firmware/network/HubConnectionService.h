@@ -54,6 +54,13 @@ struct HubHealthTrends {
   float diskUsedPercent[kMaxPoints] = {};
 };
 
+/** One bounded active alert carried by a server health snapshot. */
+struct HubActiveAlert {
+  char metric[32] = {};
+  HealthGrade state = HealthGrade::Warning;
+  float value = 0.0F;
+};
+
 /** Latest server health values rendered by the terminal dashboard. */
 struct HubHealthSnapshot {
   bool valid = false;
@@ -77,6 +84,9 @@ struct HubHealthSnapshot {
   uint32_t latencyMs = 0;
   uint32_t receivedAtMs = 0;
   HubHealthTrends trends = {};
+  static constexpr size_t kMaxActiveAlerts = 4;
+  uint8_t activeAlertCount = 0;
+  HubActiveAlert activeAlerts[kMaxActiveAlerts] = {};
   char error[64] = {};
 };
 

@@ -4,13 +4,14 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import json
-from typing import Any
-from zoneinfo import ZoneInfo
+import time
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 
 from .config import Settings
 from .device_hello import DeviceHello
+from .device_metrics import DeviceMetrics
+from .health_monitor import HealthMonitor
 from .health_response import HealthResponse
 from .metrics import HostMetricsCollector
 from .protocol import envelope, utc_now
@@ -21,18 +22,35 @@ from .store import HubStore
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     config = settings or Settings.from_env()
-    store = HubStore(config.db_path)
+    store = HubStore(
+        config.db_path,
+        host_sample_period_seconds=config.metrics_history_period_seconds,
+        host_sample_retention_days=config.metrics_history_retention_days,
+        device_offline_after_seconds=config.device_offline_after_seconds,
+    )
     metrics = HostMetricsCollector(
         config.metrics_proc_root,
         config.metrics_sys_root,
         config.metrics_disk_root,
         config.metrics_interface,
     )
+    monitor: HealthMonitor | None = None
+    monitor_task: asyncio.Task[None] | None = None
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        nonlocal monitor, monitor_task
         store.initialize()
-        yield
+        monitor = HealthMonitor(config, store, metrics)
+        monitor.sample()
+        app.state.monitor = monitor
+        monitor_task = asyncio.create_task(monitor.run())
+        try:
+            yield
+        finally:
+            if monitor_task is not None:
+                monitor_task.cancel()
+                await asyncio.gather(monitor_task, return_exceptions=True)
 
     app = FastAPI(
         title="NOVA Hub API", version=config.hub_version, lifespan=lifespan
@@ -40,6 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = config
     app.state.store = store
     app.state.metrics = metrics
+    app.state.monitor = None
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -63,11 +82,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
+        if monitor is None:
+            raise HTTPException(status_code=503, detail="monitor unavailable")
         return HealthResponse(
             protocol_version=config.protocol_version,
             server_version=config.hub_version,
             server_time=utc_now(),
-            payload=_health_payload(config, metrics),
+            payload=monitor.snapshot(),
         )
 
     @app.websocket("/v1/ws")
@@ -76,6 +97,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             hello = await _receive_hello(websocket, config.protocol_version)
             store.mark_seen(hello.device_id, hello.installation_nonce)
+            accepted_capabilities = (
+                ["device_metrics_v1"]
+                if "device_metrics_v1" in hello.capabilities
+                else []
+            )
             await websocket.send_json(
                 envelope(
                     config.protocol_version,
@@ -84,11 +110,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "device_id": hello.device_id,
                         "server_version": config.hub_version,
                         "server_time": utc_now().isoformat().replace("+00:00", "Z"),
+                        "accepted_capabilities": accepted_capabilities,
                     },
                 )
             )
+            if monitor is None:
+                raise RuntimeError("monitor unavailable")
             await _stream_health(
-                websocket, metrics, config.protocol_version, config
+                websocket, monitor, hello, config.protocol_version, config
             )
         except WebSocketDisconnect:
             return
@@ -112,16 +141,24 @@ async def _receive_hello(
 
 async def _stream_health(
     websocket: WebSocket,
-    metrics: HostMetricsCollector,
+    monitor: HealthMonitor,
+    hello: DeviceHello,
     protocol_version: int,
     config: Settings,
 ) -> None:
+    last_device_metrics_at: float | None = None
     while True:
         await websocket.send_json(
-            envelope(protocol_version, "health.snapshot", _health_payload(config, metrics))
+            envelope(
+                protocol_version,
+                "health.snapshot",
+                monitor.snapshot(hello.device_id),
+            )
         )
         try:
-            raw = await asyncio.wait_for(websocket.receive_text(), timeout=5)
+            raw = await asyncio.wait_for(
+                websocket.receive_text(), timeout=config.health_sample_period_seconds
+            )
         except asyncio.TimeoutError:
             continue
         message = json.loads(raw)
@@ -143,6 +180,55 @@ async def _stream_health(
             return
         if message.get("type") == "device.ping":
             await websocket.send_json(envelope(protocol_version, "server.pong", {}))
+        elif message.get("type") == "device.metrics":
+            now = time.monotonic()
+            if (
+                last_device_metrics_at is not None
+                and now - last_device_metrics_at
+                < config.device_telemetry_period_seconds
+            ):
+                await websocket.send_json(
+                    envelope(
+                        protocol_version,
+                        "protocol.error",
+                        {
+                            "code": "device_metrics_rate_limited",
+                            "message": "device.metrics cadence exceeded",
+                        },
+                    )
+                )
+                continue
+            try:
+                frame = DeviceMetrics.model_validate(message.get("payload", {}))
+            except ValueError:
+                await websocket.send_json(
+                    envelope(
+                        protocol_version,
+                        "protocol.error",
+                        {
+                            "code": "invalid_device_metrics",
+                            "message": "device.metrics payload rejected",
+                        },
+                    )
+                )
+                continue
+            try:
+                monitor.record_device_metrics(
+                    hello.device_id, frame.model_dump(mode="json")
+                )
+            except ValueError:
+                await websocket.send_json(
+                    envelope(
+                        protocol_version,
+                        "protocol.error",
+                        {
+                            "code": "device_metrics_rejected",
+                            "message": "device.metrics could not be persisted",
+                        },
+                    )
+                )
+                continue
+            last_device_metrics_at = now
         else:
             await websocket.send_json(
                 envelope(
@@ -150,22 +236,7 @@ async def _stream_health(
                     "protocol.error",
                     {"code": "unknown_message", "message": "message ignored"},
                 )
-            )
-
-def _health_payload(
-    config: Settings, metrics: HostMetricsCollector
-) -> dict[str, Any]:
-    payload = metrics.collect()
-    now = utc_now()
-    payload["server_version"] = config.hub_version
-    payload["home_time"] = now.astimezone(ZoneInfo(config.home_timezone)).replace(
-        microsecond=0
-    ).isoformat()
-    payload["service_status"] = {
-        "hub_api": "healthy",
-        "metrics": "healthy" if not payload["collection_errors"] else "degraded",
-    }
-    return payload
+                )
 
 
 app = create_app()

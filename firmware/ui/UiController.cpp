@@ -1,5 +1,7 @@
 #include "UiController.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 namespace nova {
@@ -12,6 +14,7 @@ constexpr uint32_t kTextColor = 0xE7F1F5;
 constexpr uint32_t kMutedTextColor = 0x8BA3AD;
 constexpr uint32_t kWarningColor = 0xF2C14E;
 constexpr uint32_t kErrorColor = 0xFF6B6B;
+constexpr char kSparklineChars[] = " .o*#";
 constexpr int16_t kKeyboardHorizontalInset = 8;
 constexpr int16_t kKeyboardTop = 216;
 constexpr int16_t kKeyboardBottomInset = 10;
@@ -49,6 +52,45 @@ uint32_t stateColor(HubState state) {
     default:
       return kMutedTextColor;
   }
+}
+
+uint32_t healthColor(HealthGrade grade) {
+  switch (grade) {
+    case HealthGrade::Normal:
+      return kAccentColor;
+    case HealthGrade::Warning:
+      return kWarningColor;
+    case HealthGrade::Critical:
+      return kErrorColor;
+  }
+  return kMutedTextColor;
+}
+
+void formatSparkline(const float* values, uint8_t count, char* output,
+                     size_t capacity) {
+  if (output == nullptr || capacity == 0) {
+    return;
+  }
+  if (values == nullptr || count == 0) {
+    snprintf(output, capacity, "--");
+    return;
+  }
+  float minimum = values[0];
+  float maximum = values[0];
+  for (uint8_t index = 1; index < count; ++index) {
+    minimum = std::min(minimum, values[index]);
+    maximum = std::max(maximum, values[index]);
+  }
+  const float range = maximum - minimum;
+  const size_t length = std::min(static_cast<size_t>(count), capacity - 1);
+  for (size_t index = 0; index < length; ++index) {
+    const float normalized = range <= 0.01F
+                                 ? 0.5F
+                                 : (values[index] - minimum) / range;
+    const size_t bucket = static_cast<size_t>(normalized * 4.0F + 0.5F);
+    output[index] = kSparklineChars[bucket > 4 ? 4 : bucket];
+  }
+  output[length] = '\0';
 }
 
 void setMetricText(lv_obj_t* label, const char* name, const char* value) {
@@ -621,13 +663,17 @@ void UiController::hideSshPassword() {
 void UiController::updateHomeView() {
   const HubHealthSnapshot& health = hub_.health();
   lv_label_set_text_fmt(homeState_, "HUB  %s", hub_.stateName());
-  lv_obj_set_style_text_color(homeState_, lv_color_hex(stateColor(hub_.state())),
-                              LV_PART_MAIN);
+  const uint32_t statusColor = health.valid && hub_.state() == HubState::Live
+                                   ? healthColor(health.healthGrade)
+                                   : stateColor(hub_.state());
+  lv_obj_set_style_text_color(homeState_, lv_color_hex(statusColor), LV_PART_MAIN);
   if (health.valid) {
+    lv_label_set_text_fmt(homeState_, "HUB %s / %s", hub_.stateName(),
+                          healthGradeName(health.healthGrade));
     lv_label_set_text_fmt(homeClock_, "SERVER %s", health.serverTime);
     lv_label_set_text_fmt(homeLatency_, "Latency %lu ms  /  %s",
                           static_cast<unsigned long>(health.latencyMs),
-                          health.dependencyStatus);
+                          healthGradeName(health.healthGrade));
     char memory[32] = {};
     char disk[32] = {};
     char network[32] = {};
@@ -664,13 +710,32 @@ void UiController::updateServerView() {
     lv_label_set_text(serverMetrics_, "Waiting for a live health snapshot.");
     return;
   }
-  char metrics[512] = {};
+  char cpuTrend[HubHealthTrends::kMaxPoints + 1] = {};
+  char memoryTrend[HubHealthTrends::kMaxPoints + 1] = {};
+  char diskTrend[HubHealthTrends::kMaxPoints + 1] = {};
+  formatSparkline(health.trends.cpuPercent, health.trends.cpuPointCount, cpuTrend,
+                  sizeof(cpuTrend));
+  formatSparkline(health.trends.memoryUsedPercent,
+                  health.trends.memoryPointCount, memoryTrend,
+                  sizeof(memoryTrend));
+  formatSparkline(health.trends.diskUsedPercent, health.trends.diskPointCount,
+                  diskTrend, sizeof(diskTrend));
+  char alertText[96] = {};
+  if (health.activeAlertCount > 0) {
+    const HubActiveAlert& alert = health.activeAlerts[0];
+    snprintf(alertText, sizeof(alertText), "Alert: %s %s %.1f",
+             alert.metric, healthGradeName(alert.state), alert.value);
+  } else {
+    snprintf(alertText, sizeof(alertText), "Alerts: none");
+  }
+  char metrics[768] = {};
   snprintf(
       metrics, sizeof(metrics),
-      "Version: %s\nUptime: %.0f s\nCPU: %.1f%%\nRAM: %llu / %llu MB\n"
-      "Disk: %llu / %llu MB\nNetwork: %s\nRX/TX: %.0f / %.0f KB/s\n%s\n"
-      "Services: hub=%s metrics=%s",
-      health.serverVersion, health.uptimeSeconds, health.cpuPercent,
+      "Version: %s\nHealth: %s\nUptime: %.0f s\nCPU: %.1f%%\nRAM: %llu / %llu MB\n"
+      "Disk: %llu / %llu MB\nNetwork: %s\nRX/TX: %.0f / %.0f KB/s\n%s\n%s\n"
+      "Trends CPU:%s RAM:%s DISK:%s\nServices: hub=%s metrics=%s",
+      health.serverVersion, healthGradeName(health.healthGrade),
+      health.uptimeSeconds, health.cpuPercent,
       static_cast<unsigned long long>(health.memoryUsedBytes / 1048576ULL),
       static_cast<unsigned long long>(health.memoryTotalBytes / 1048576ULL),
       static_cast<unsigned long long>(health.diskUsedBytes / 1048576ULL),
@@ -678,6 +743,8 @@ void UiController::updateServerView() {
       health.networkInterface, health.networkRxBytesPerSecond / 1024.0F,
       health.networkTxBytesPerSecond / 1024.0F,
       health.error[0] == '\0' ? "Metrics current" : health.error,
+      alertText,
+      cpuTrend, memoryTrend, diskTrend,
       health.hubApiStatus, health.metricsStatus);
   lv_label_set_text(serverMetrics_, metrics);
 }
@@ -697,10 +764,12 @@ void UiController::updateDiagnosticsView() {
   lv_label_set_text_fmt(
       diagnosticsStatus_,
       "DISPLAY  %s\nTOUCH    %s\nWI-FI    %s\nHUB      %s\n"
-      "CA       %s\nSSH      %s\nPSRAM    %s\n\n"
+      "HEALTH   %s\nCA       %s\nSSH      %s\nPSRAM    %s\n\n"
       "Production SSH/OTA is disabled by the secure rollout policy.",
       display_.isReady() ? "READY" : "FAILED", touch_.isReady() ? "READY" : "FAILED",
-      wifi_.stateName(), hub_.stateName(), hub_.hasTrustAnchor() ? "LOADED" : "MISSING",
+      wifi_.stateName(), hub_.stateName(),
+      healthGradeName(hub_.health().healthGrade),
+      hub_.hasTrustAnchor() ? "LOADED" : "MISSING",
       ssh_.isEnabled() ? "ENABLED" : "DISABLED", psramFound() ? "READY" : "MISSING");
 }
 
