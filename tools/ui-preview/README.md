@@ -26,3 +26,6 @@ preview API; it is not part of the firmware protocol.
 The preceding `fixtures.js` script provides the internal `window.NovaFixtures`
 namespace consumed by the app bundle. It keeps fixture data and preview timing
 constants separate from rendering and interaction logic.
+
+A rendered capture of the new design is available at
+[`assets/nova-design-preview.png`](assets/nova-design-preview.png).
