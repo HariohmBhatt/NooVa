@@ -3,176 +3,410 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Nova firmware UI replica</title>
+    <meta
+      name="description"
+      content="A polished, dependency-free preview of the Nova local home intelligence terminal."
+    />
+    <title>NOVA — local home intelligence</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="prototype-shell">
-      <header class="prototype-header">
-        <p class="prototype-kicker">PROTOTYPE / LOCAL REPLICA</p>
-        <h1>Nova firmware UI</h1>
-        <p>
-          A browser-rendered stand-in for the 320 × 480 LVGL display. The device
-          surface mirrors <code>firmware/ui/UiController.cpp</code>; the panel
-          beside it supplies mock hardware state.
-        </p>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-home" viewBox="0 0 24 24">
+        <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V10Z" />
+      </symbol>
+      <symbol id="icon-grid" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      </symbol>
+      <symbol id="icon-spark" viewBox="0 0 24 24">
+        <path d="m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2Z" />
+        <path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" />
+      </symbol>
+      <symbol id="icon-server" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="18" height="7" rx="2" />
+        <rect x="3" y="14" width="18" height="7" rx="2" />
+        <path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6" />
+      </symbol>
+      <symbol id="icon-sliders" viewBox="0 0 24 24">
+        <path d="M4 6h16M4 12h16M4 18h16" />
+        <circle cx="8" cy="6" r="2" />
+        <circle cx="16" cy="12" r="2" />
+        <circle cx="10" cy="18" r="2" />
+      </symbol>
+      <symbol id="icon-mic" viewBox="0 0 24 24">
+        <rect x="8" y="2.5" width="8" height="13" rx="4" />
+        <path d="M5 11.5a7 7 0 0 0 14 0M12 18.5V22M9 22h6" />
+      </symbol>
+      <symbol id="icon-wifi" viewBox="0 0 24 24">
+        <path d="M3 8.5a14 14 0 0 1 18 0M6.5 12a8.5 8.5 0 0 1 11 0M10 15.5a3.3 3.3 0 0 1 4 0M12 20h.01" />
+      </symbol>
+      <symbol id="icon-arrow" viewBox="0 0 24 24">
+        <path d="M5 12h13M13 6l6 6-6 6" />
+      </symbol>
+      <symbol id="icon-chevron" viewBox="0 0 24 24">
+        <path d="m9 5 7 7-7 7" />
+      </symbol>
+      <symbol id="icon-arrow-left" viewBox="0 0 24 24">
+        <path d="M19 12H5M11 18l-6-6 6-6" />
+      </symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24">
+        <path d="m5 12 4 4L19 6" />
+      </symbol>
+      <symbol id="icon-lock" viewBox="0 0 24 24">
+        <rect x="4" y="10" width="16" height="11" rx="2" />
+        <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+      </symbol>
+      <symbol id="icon-terminal" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="m7 9 3 3-3 3M13 15h4" />
+      </symbol>
+      <symbol id="icon-activity" viewBox="0 0 24 24">
+        <path d="M3 12h4l2-6 4 12 2-6h6" />
+      </symbol>
+      <symbol id="icon-light" viewBox="0 0 24 24">
+        <path d="M9 18h6M10 21h4M8.5 14.5a6 6 0 1 1 7 0c-1 .7-1.5 1.6-1.5 2.5h-4c0-.9-.5-1.8-1.5-2.5Z" />
+      </symbol>
+      <symbol id="icon-thermo" viewBox="0 0 24 24">
+        <path d="M14 14.5V5a2 2 0 1 0-4 0v9.5a5 5 0 1 0 4 0Z" />
+        <path d="M12 12v5" />
+      </symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24">
+        <path d="M12 3 20 6v5c0 5-3.2 8.2-8 10-4.8-1.8-8-5-8-10V6l8-3Z" />
+        <path d="m8.5 12 2.2 2.2 4.8-4.8" />
+      </symbol>
+      <symbol id="icon-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 7v5l3 2" />
+      </symbol>
+      <symbol id="icon-log" viewBox="0 0 24 24">
+        <path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" />
+      </symbol>
+    </svg>
+
+    <main class="app-shell">
+      <header class="studio-header">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true"><span></span></span>
+          <div>
+            <p class="eyebrow">LOCAL HOME INTELLIGENCE</p>
+            <h1>NOVA <span>/ touch terminal</span></h1>
+          </div>
+        </div>
+        <div class="header-meta" aria-label="Preview metadata">
+          <span class="status-dot is-live"></span>
+          <span>Interactive preview</span>
+          <span class="header-divider" aria-hidden="true"></span>
+          <span>320 × 480</span>
+        </div>
       </header>
 
-      <div class="workspace">
-        <section class="device-frame" aria-label="Nova 320 by 480 display">
-          <div class="device-screen" id="device-screen">
-            <div class="app-title">NOVA  /  HOME AI HUB</div>
-            <div class="app-subtitle">LOCAL TERMINAL  /  ESP32-S3</div>
-
-            <main class="content">
-              <section class="page is-active" data-page="home">
-                <h2 class="page-title">HOME STATUS</h2>
-                <p class="server-time" id="home-clock">SERVER --</p>
-                <p class="status-line" id="home-state">HUB LIVE / NORMAL</p>
-                <p class="muted home-latency" id="home-latency">
-                  Latency 24 ms  /  NORMAL
-                </p>
-                <div class="metric-grid">
-                  <div class="metric-tile">
-                    <span>CPU</span>
-                    <strong id="home-cpu">12.4%</strong>
-                  </div>
-                  <div class="metric-tile">
-                    <span>RAM</span>
-                    <strong id="home-memory">3068/8192 MB</strong>
-                  </div>
-                  <div class="metric-tile">
-                    <span>DISK</span>
-                    <strong id="home-disk">42/128 GB</strong>
-                  </div>
-                  <div class="metric-tile">
-                    <span>NET RX/TX</span>
-                    <strong id="home-network">84/31 KB/s</strong>
-                  </div>
+      <div class="studio-layout">
+        <section class="device-stage" aria-label="Nova 320 by 480 display preview">
+          <div class="device-frame">
+            <div class="device-sensor" aria-hidden="true"></div>
+            <div class="device-screen" id="device-screen">
+              <header class="screen-statusbar">
+                <button
+                  class="screen-brand"
+                  type="button"
+                  data-target="home"
+                  aria-label="Go to Nova home"
+                >
+                  <span class="screen-brand-mark" aria-hidden="true"></span>
+                  <span>NOVA</span>
+                </button>
+                <div class="screen-utilities">
+                  <span class="screen-time" id="screen-time">19:30</span>
+                  <span class="screen-wifi" id="screen-wifi" aria-label="Wi-Fi connected">
+                    <svg class="icon icon-xs" aria-hidden="true"><use href="#icon-wifi"></use></svg>
+                  </span>
+                  <button
+                    class="screen-icon-button"
+                    type="button"
+                    data-target="more"
+                    aria-label="Open settings and diagnostics"
+                  >
+                    <svg class="icon icon-xs" aria-hidden="true"><use href="#icon-sliders"></use></svg>
+                  </button>
                 </div>
-                <p class="muted home-hint">Tap SERVER for detail  /  SETUP for network</p>
-              </section>
+              </header>
 
-              <section class="page" data-page="server">
-                <h2 class="page-title">SERVER DETAIL</h2>
-                <pre class="server-status" id="server-status"></pre>
-                <pre class="server-metrics" id="server-metrics"></pre>
-              </section>
+              <div class="device-content" id="device-content">
+                <section class="screen-page is-active" data-page="home" aria-labelledby="home-title">
+                  <div class="page-scroll home-page">
+                    <div class="home-date-row">
+                      <span class="eyebrow">TODAY · LOCAL TIME</span>
+                      <span class="sync-label" id="home-sync">PREVIEW CLOCK</span>
+                    </div>
+                    <div class="home-heading">
+                      <h2 id="home-title">Good evening,<br /><span>at home.</span></h2>
+                      <span class="home-clock" id="home-clock">19:30</span>
+                    </div>
 
-              <section class="page" data-page="setup">
-                <h2 class="page-title">TERMINAL SETUP</h2>
-                <pre class="setup-status" id="setup-status"></pre>
-                <p class="muted setup-hint">
-                  Hub registration and metrics connection<br />
-                  start automatically when Wi-Fi is ready.
-                </p>
-                <button class="screen-button setup-button wifi-button" id="setup-wifi">
-                  WI-FI
-                </button>
-                <button class="screen-button setup-button ssh-button" id="setup-ssh">
-                  SSH
-                </button>
-              </section>
+                    <button class="hub-status-card" type="button" data-target="hub">
+                      <span class="health-icon" id="home-health-icon">
+                        <svg class="icon" aria-hidden="true"><use href="#icon-activity"></use></svg>
+                      </span>
+                      <span class="hub-status-copy">
+                        <span class="eyebrow">HOME HUB</span>
+                        <strong id="home-state">All systems calm</strong>
+                        <span id="home-latency">Connected · 24 ms round trip</span>
+                      </span>
+                      <svg class="icon icon-sm card-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    </button>
 
-              <section class="page" data-page="diagnostics">
-                <h2 class="page-title">DIAGNOSTICS</h2>
-                <pre class="diagnostics-status" id="diagnostics-status"></pre>
-              </section>
+                    <button class="assistant-card" id="home-assistant" type="button" data-target="assistant">
+                      <span class="assistant-orb mini-orb" aria-hidden="true">
+                        <svg class="icon" aria-hidden="true"><use href="#icon-mic"></use></svg>
+                      </span>
+                      <span class="assistant-card-copy">
+                        <span class="eyebrow">NOVA ASSISTANT</span>
+                        <strong>Ask your home anything</strong>
+                        <span>Audio only streams while active</span>
+                      </span>
+                      <span class="hold-hint">TAP</span>
+                    </button>
 
-              <section class="page" data-page="wifi">
-                <h2 class="page-title">WI-FI SETUP</h2>
-                <button class="screen-button small-button back-button" id="wifi-back">
-                  BACK
-                </button>
-                <pre class="wifi-status" id="wifi-status"></pre>
-                <button class="screen-button small-button scan-button" id="wifi-scan">
-                  SCAN
-                </button>
-                <div class="wifi-list" id="wifi-list" aria-label="Wi-Fi networks"></div>
-                <label class="password-row is-hidden" id="wifi-password-row">
-                  <span class="sr-only">Wi-Fi password</span>
-                  <input id="wifi-password" type="password" placeholder="Wi-Fi password" />
-                </label>
-              </section>
+                    <div class="section-heading">
+                      <h3>Quick scenes</h3>
+                      <span class="section-meta">MOCK FIXTURES</span>
+                    </div>
+                    <div class="scene-row" id="scene-row">
+                      <button class="scene-chip is-active" type="button" data-scene="evening">
+                        <span class="scene-chip-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-light"></use></svg></span>
+                        <span>Evening</span>
+                      </button>
+                      <button class="scene-chip" type="button" data-scene="away">
+                        <span class="scene-chip-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-shield"></use></svg></span>
+                        <span>Away</span>
+                      </button>
+                      <button class="scene-chip" type="button" data-scene="focus">
+                        <span class="scene-chip-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-spark"></use></svg></span>
+                        <span>Focus</span>
+                      </button>
+                    </div>
 
-              <section class="page" data-page="ssh">
-                <h2 class="page-title">SSH DIAGNOSTICS</h2>
-                <button class="screen-button small-button back-button" id="ssh-back">
-                  BACK
-                </button>
-                <pre class="ssh-status" id="ssh-status"></pre>
-                <button class="screen-button small-button ssh-action-button" id="ssh-action">
-                  SET UP
-                </button>
-                <p class="ssh-instructions" id="ssh-instructions">
-                  LAN-only diagnostics.<br />
-                  The server exposes status commands,<br />
-                  not an operating-system shell.
-                </p>
-                <label class="password-row is-hidden" id="ssh-password-row">
-                  <span class="sr-only">SSH password</span>
-                  <input id="ssh-password" type="password" placeholder="SSH password" />
-                </label>
-              </section>
+                    <div class="section-heading glance-heading">
+                      <h3>At a glance</h3>
+                      <button class="text-action" type="button" data-target="rooms">View rooms <svg class="icon icon-xs" aria-hidden="true"><use href="#icon-arrow"></use></svg></button>
+                    </div>
+                    <div class="glance-grid">
+                      <div class="glance-card">
+                        <span class="glance-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-light"></use></svg></span>
+                        <span class="eyebrow">LIGHTS</span>
+                        <strong id="summary-lights">3 on</strong>
+                      </div>
+                      <div class="glance-card">
+                        <span class="glance-icon warm"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-thermo"></use></svg></span>
+                        <span class="eyebrow">INDOORS</span>
+                        <strong id="summary-temp">21° · calm</strong>
+                      </div>
+                      <div class="glance-card wide-glance">
+                        <span class="glance-icon lavender"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-grid"></use></svg></span>
+                        <span class="eyebrow">DEVICES</span>
+                        <strong id="summary-devices">8 online · 0 attention</strong>
+                      </div>
+                    </div>
+                  </div>
+                </section>
 
-              <section class="page" data-page="logs">
-                <h2 class="page-title">LIVE DEBUG LOG</h2>
-                <pre class="log-text" id="log-text"></pre>
-              </section>
-            </main>
+                <section class="screen-page" data-page="rooms" aria-labelledby="rooms-title">
+                  <div class="page-scroll">
+                    <div class="page-heading">
+                      <div>
+                        <p class="eyebrow">MOCK HOME CONTROL</p>
+                        <h2 id="rooms-title">Rooms</h2>
+                      </div>
+                      <span class="count-badge" id="room-count">4</span>
+                    </div>
+                    <p class="page-intro">Everything important, one calm tap away.</p>
+                    <div class="room-grid" id="room-grid"></div>
+                    <div class="safe-note"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-shield"></use></svg><span>Only approved, low-risk actions are available here.</span></div>
+                  </div>
+                </section>
 
-            <nav class="bottom-nav" id="bottom-nav" aria-label="Firmware pages">
-              <button class="nav-button is-active" data-target="home">HOME</button>
-              <button class="nav-button" data-target="server">SERVER</button>
-              <button class="nav-button" data-target="setup">SETUP</button>
-              <button class="nav-button" data-target="diagnostics">DIAG</button>
-              <button class="nav-button" data-target="logs">LOG</button>
-            </nav>
+                <section class="screen-page" data-page="room-detail" aria-labelledby="room-detail-title">
+                  <div class="page-scroll">
+                    <button class="back-link" type="button" data-target="rooms"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-arrow-left"></use></svg> Rooms</button>
+                    <div class="page-heading room-detail-heading">
+                      <div>
+                        <p class="eyebrow" id="room-detail-kicker">ROOM</p>
+                        <h2 id="room-detail-title">Living room</h2>
+                      </div>
+                      <span class="room-temperature" id="room-detail-temp">21°</span>
+                    </div>
+                    <p class="page-intro" id="room-detail-summary">A few gentle adjustments for the evening.</p>
+                    <div class="device-list" id="device-list"></div>
+                    <button class="outline-action" type="button" data-target="rooms">Done <svg class="icon icon-xs" aria-hidden="true"><use href="#icon-check"></use></svg></button>
+                  </div>
+                </section>
 
-            <section class="keyboard-overlay is-hidden" id="keyboard-overlay">
-              <p class="keyboard-caption" id="keyboard-caption">PASSWORD</p>
-              <div class="keyboard-keys" id="keyboard-keys"></div>
-              <div class="keyboard-actions">
-                <button class="keyboard-action" data-key-action="cancel">CANCEL</button>
-                <button class="keyboard-action ready" data-key-action="ready">READY</button>
+                <section class="screen-page" data-page="assistant" aria-labelledby="assistant-title">
+                  <div class="page-scroll assistant-page">
+                    <div class="page-heading">
+                      <div>
+                        <p class="eyebrow">LOCAL VOICE CONCEPT</p>
+                        <h2 id="assistant-title">Nova, listen.</h2>
+                      </div>
+                      <span class="privacy-badge"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-lock"></use></svg> LAN-FIRST</span>
+                    </div>
+                    <div class="assistant-stage">
+                      <span class="assistant-ring ring-one"></span>
+                      <span class="assistant-ring ring-two"></span>
+                      <button class="assistant-orb" id="assistant-orb" type="button" aria-pressed="false" aria-label="Start listening">
+                        <svg class="icon icon-lg" aria-hidden="true"><use href="#icon-mic"></use></svg>
+                      </button>
+                      <span class="assistant-state" id="assistant-state">READY TO HELP</span>
+                    </div>
+                    <p class="assistant-caption" id="assistant-caption">Tap once, speak naturally, then tap when you are done.</p>
+                    <div class="conversation-card" aria-live="polite">
+                      <div class="conversation-label"><span>MOCK SESSION</span><span id="assistant-session-state">IDLE</span></div>
+                      <p class="transcript" id="assistant-transcript">“Turn on the living room lights.”</p>
+                      <p class="assistant-response" id="assistant-response">Try: “Set a quiet scene for the evening.”</p>
+                    </div>
+                    <button class="primary-action" id="assistant-action" type="button">START LISTENING <svg class="icon icon-xs" aria-hidden="true"><use href="#icon-mic"></use></svg></button>
+                    <p class="privacy-copy"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-shield"></use></svg> Preview policy · raw audio is not retained by default. The microphone is active only during this session.</p>
+                  </div>
+                </section>
+
+                <section class="screen-page" data-page="hub" aria-labelledby="hub-title">
+                  <div class="page-scroll">
+                    <div class="page-heading">
+                      <div>
+                        <p class="eyebrow">HOME SERVER</p>
+                        <h2 id="hub-title">Hub health</h2>
+                      </div>
+                      <button class="icon-button" type="button" data-target="logs" aria-label="Open hub logs"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-log"></use></svg></button>
+                    </div>
+                    <div class="health-summary" id="hub-health-summary">
+                      <div class="health-summary-top"><span class="health-pulse"></span><strong id="hub-health-grade">ALL SYSTEMS NORMAL</strong></div>
+                      <span id="hub-health-detail">Metrics current · 24 ms round trip</span>
+                    </div>
+                    <div class="service-list" id="service-list"></div>
+                    <div class="section-heading metrics-heading"><h3 id="hub-metrics-title">Live metrics</h3><span class="section-meta">60 SEC</span></div>
+                    <div class="metrics-grid">
+                      <div class="metric-card"><span class="eyebrow">CPU</span><strong id="hub-cpu">12.4%</strong><span class="sparkline" id="cpu-spark">▂▃▂▄▃▂▃</span></div>
+                      <div class="metric-card"><span class="eyebrow">MEMORY</span><strong id="hub-memory">37%</strong><span class="sparkline mint" id="memory-spark">▃▃▄▃▄▃▄</span></div>
+                      <div class="metric-card wide-metric"><span class="eyebrow">STORAGE</span><strong id="hub-disk">33%</strong><span class="metric-caption" id="hub-network">84 KB/s in · 31 KB/s out</span></div>
+                    </div>
+                    <div class="hub-footnote" id="hub-footnote"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-server"></use></svg> nova-hub.local · v0.4.0 · uptime 2d 03h</div>
+                  </div>
+                </section>
+
+                <section class="screen-page" data-page="more" aria-labelledby="more-title">
+                  <div class="page-scroll">
+                    <div class="page-heading">
+                      <div>
+                        <p class="eyebrow">TERMINAL</p>
+                        <h2 id="more-title">More</h2>
+                      </div>
+                      <span class="version-badge">v0.4.0</span>
+                    </div>
+                    <button class="setup-banner" id="more-setup-banner" type="button" data-target="wifi"><span class="banner-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-shield"></use></svg></span><span><strong>Local by default</strong><small>Your home data stays on your network.</small></span><svg class="icon icon-xs banner-arrow" aria-hidden="true"><use href="#icon-chevron"></use></svg></button>
+                    <div class="more-grid">
+                      <button class="utility-card" type="button" data-target="diagnostics"><span class="utility-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-activity"></use></svg></span><strong>Diagnostics</strong><small>Hardware health</small><svg class="icon icon-xs utility-arrow" aria-hidden="true"><use href="#icon-chevron"></use></svg></button>
+                      <button class="utility-card" type="button" data-target="wifi"><span class="utility-icon mint"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-wifi"></use></svg></span><strong>Network</strong><small id="more-wifi-label">Nova-24G · -47 dBm</small><svg class="icon icon-xs utility-arrow" aria-hidden="true"><use href="#icon-chevron"></use></svg></button>
+                      <button class="utility-card" type="button" data-target="ssh"><span class="utility-icon warm"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-terminal"></use></svg></span><strong>SSH tools</strong><small id="more-ssh-label">LAN diagnostics</small><svg class="icon icon-xs utility-arrow" aria-hidden="true"><use href="#icon-chevron"></use></svg></button>
+                      <button class="utility-card" type="button" data-target="logs"><span class="utility-icon lavender"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-log"></use></svg></span><strong>Live logs</strong><small id="more-log-label">6 events · local buffer</small><svg class="icon icon-xs utility-arrow" aria-hidden="true"><use href="#icon-chevron"></use></svg></button>
+                    </div>
+                    <div class="security-note"><span class="security-note-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-lock"></use></svg></span><span><strong>Trust boundary</strong><small>The terminal has an audit identity, not a Home Assistant credential.</small></span></div>
+                  </div>
+                </section>
+
+                <section class="screen-page" data-page="diagnostics" aria-labelledby="diagnostics-title">
+                  <div class="page-scroll">
+                    <button class="back-link" type="button" data-target="more"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-arrow-left"></use></svg> More</button>
+                    <div class="page-heading"><div><p class="eyebrow">DEVICE HEALTH</p><h2 id="diagnostics-title">Diagnostics</h2></div><span class="status-badge good" id="diagnostics-grade">READY</span></div>
+                    <div class="diagnostic-list" id="diagnostic-list"></div>
+                    <div class="diagnostic-policy"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-shield"></use></svg><span>Read-only checks. No rails, RTC registers, or eFuses are changed.</span></div>
+                  </div>
+                </section>
+
+                <section class="screen-page" data-page="wifi" aria-labelledby="wifi-title">
+                  <div class="page-scroll">
+                    <button class="back-link" type="button" data-target="more"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-arrow-left"></use></svg> More</button>
+                    <div class="page-heading"><div><p class="eyebrow">CONNECTIVITY</p><h2 id="wifi-title">Network</h2></div><button class="small-outline-action" id="wifi-scan" type="button">SCAN</button></div>
+                    <div class="network-status-card"><span class="network-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-wifi"></use></svg></span><span><span class="eyebrow">CURRENT NETWORK · 2.4 GHZ</span><strong id="wifi-current-ssid">Nova-24G</strong><small id="wifi-status">Connected · 192.168.29.18 · -47 dBm</small></span></div>
+                    <p class="list-label">AVAILABLE NETWORKS</p>
+                    <div class="wifi-list" id="wifi-list" aria-label="Wi-Fi networks"></div>
+                    <label class="password-row is-hidden" id="wifi-password-row"><span class="eyebrow">PASSWORD</span><input id="wifi-password" type="password" placeholder="Enter network password" autocomplete="off" /></label>
+                  </div>
+                </section>
+
+                <section class="screen-page" data-page="ssh" aria-labelledby="ssh-title">
+                  <div class="page-scroll">
+                    <button class="back-link" type="button" data-target="more"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-arrow-left"></use></svg> More</button>
+                    <div class="page-heading"><div><p class="eyebrow">LAN-ONLY DEVELOPMENT TOOLS</p><h2 id="ssh-title">SSH access</h2></div><span class="status-badge" id="ssh-badge">OFF</span></div>
+                    <div class="ssh-card"><span class="utility-icon warm"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-terminal"></use></svg></span><span><span class="eyebrow">FIXED USER</span><strong>nova</strong><small id="ssh-status">Not configured · diagnostics only</small></span></div>
+                    <button class="primary-action compact" id="ssh-action" type="button">CONFIGURE ACCESS <svg class="icon icon-xs" aria-hidden="true"><use href="#icon-arrow"></use></svg></button>
+                    <p class="ssh-instructions" id="ssh-instructions">Development-only LAN diagnostics expose status commands, logs, Wi-Fi information, and reboot. Production builds disable SSH and OTA; this is not an operating-system shell.</p>
+                    <label class="password-row is-hidden" id="ssh-password-row"><span class="eyebrow">SET PASSWORD</span><input id="ssh-password" type="password" placeholder="Create a LAN password" autocomplete="off" /></label>
+                    <div class="ssh-boundary"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-lock"></use></svg> Only available on the trusted local network.</div>
+                  </div>
+                </section>
+
+                <section class="screen-page" data-page="logs" aria-labelledby="logs-title">
+                  <div class="page-scroll">
+                    <button class="back-link" type="button" data-target="more"><svg class="icon icon-xs" aria-hidden="true"><use href="#icon-arrow-left"></use></svg> More</button>
+                    <div class="page-heading"><div><p class="eyebrow">LOCAL OBSERVABILITY</p><h2 id="logs-title">Live logs</h2></div><span class="status-badge good">LOCAL BUFFER</span></div>
+                    <div class="log-window" id="log-text" aria-live="polite"></div>
+                    <p class="log-footnote"><span class="status-dot is-live"></span> USB serial is a development mirror only.</p>
+                  </div>
+                </section>
               </div>
-            </section>
+
+              <nav class="bottom-nav" id="bottom-nav" aria-label="Nova pages">
+                <button class="nav-button is-active" type="button" data-target="home"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-home"></use></svg><span>Home</span></button>
+                <button class="nav-button" type="button" data-target="rooms"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-grid"></use></svg><span>Rooms</span></button>
+                <button class="nav-button nav-assist" type="button" data-target="assistant"><span class="nav-assist-dot"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-mic"></use></svg></span><span>Assist</span></button>
+                <button class="nav-button" type="button" data-target="hub"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-server"></use></svg><span>Hub</span></button>
+                <button class="nav-button" type="button" data-target="more"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-sliders"></use></svg><span>More</span></button>
+              </nav>
+
+              <section class="keyboard-overlay is-hidden" id="keyboard-overlay" role="dialog" aria-modal="true" aria-hidden="true" aria-label="On-screen password keyboard" tabindex="-1">
+                <div class="keyboard-head"><span class="eyebrow" id="keyboard-caption">PASSWORD</span><button class="keyboard-cancel" type="button" data-key-action="cancel">CANCEL</button></div>
+                <div class="keyboard-keys" id="keyboard-keys"></div>
+                <div class="keyboard-actions"><button class="keyboard-action" type="button" data-key-action="clear">CLEAR</button><button class="keyboard-action ready" type="button" data-key-action="ready">DONE <svg class="icon icon-xs" aria-hidden="true"><use href="#icon-check"></use></svg></button></div>
+              </section>
+
+              <div class="screen-toast" id="screen-toast" role="status" aria-live="polite"></div>
+            </div>
           </div>
+          <p class="stage-caption"><span class="status-dot is-live"></span><span>Future-state interface concept</span><span class="caption-divider">·</span><span>All interactions run locally in memory</span></p>
         </section>
 
-        <aside class="prototype-controls">
-          <div class="control-header">
-            <span class="control-tag">MOCK HARDWARE</span>
-            <span class="control-size">320 × 480</span>
-          </div>
-          <h2>Interaction harness</h2>
-          <p class="muted">
-            Choose a hub scenario, then use the device itself. All state is
-            in-memory and resets on reload.
-          </p>
-          <div class="scenario-controls" aria-label="Mock hub scenario">
-            <button class="scenario-button is-selected" data-scenario="live">
-              LIVE
-            </button>
-            <button class="scenario-button" data-scenario="degraded">
-              DEGRADED
-            </button>
-            <button class="scenario-button" data-scenario="setup">
-              SETUP
-            </button>
-          </div>
-          <button class="reset-button" id="reset-demo">RESET DEMO</button>
-          <h3>Current state</h3>
-          <pre class="state-readout" id="state-readout"></pre>
-          <p class="control-note">
-            The local surface is intentionally separate from firmware
-            production code. It is a fast way to inspect page density and
-            touch flows before flashing the board.
-          </p>
+        <aside class="control-panel" aria-label="Preview controls">
+          <div class="panel-topline"><span class="panel-kicker">MOCK HARDWARE</span><span class="panel-size">ESP32-S3 · 320 × 480</span></div>
+          <div class="panel-heading"><div><p class="eyebrow">DESIGN LAB / 01</p><h2>Touch terminal preview</h2></div><span class="panel-live"><span class="status-dot is-live"></span> LIVE</span></div>
+          <p class="panel-intro">Explore the product surface across connection health, home control, and the local voice loop. Choose a scenario, then use the terminal.</p>
+
+          <section class="control-section" aria-labelledby="scenario-label">
+            <div class="control-section-heading"><h3 id="scenario-label">Simulation state</h3><span>MOCK DATA</span></div>
+            <div class="scenario-controls" aria-label="Mock hub scenario">
+              <button class="scenario-button is-selected" type="button" data-scenario="live" aria-pressed="true"><span class="scenario-dot good"></span>Live</button>
+              <button class="scenario-button" type="button" data-scenario="degraded" aria-pressed="false"><span class="scenario-dot warning"></span>Degraded</button>
+              <button class="scenario-button" type="button" data-scenario="offline" aria-pressed="false"><span class="scenario-dot muted"></span>Offline</button>
+              <button class="scenario-button" type="button" data-scenario="setup" aria-pressed="false"><span class="scenario-dot muted"></span>Setup</button>
+            </div>
+          </section>
+
+          <section class="state-card" aria-labelledby="state-label">
+            <div class="state-card-heading"><h3 id="state-label">Device snapshot</h3><button class="reset-button" id="reset-demo" type="button">RESET</button></div>
+            <div class="state-pills"><span class="state-pill" id="harness-hub-pill">HUB LIVE</span><span class="state-pill" id="harness-wifi-pill">WI-FI CONNECTED</span><span class="state-pill" id="harness-page-pill">HOME</span></div>
+            <pre class="state-readout" id="state-readout"></pre>
+          </section>
+
+          <section class="event-card" aria-live="polite"><div class="event-card-heading"><span>Latest interaction</span><span id="event-time">NOW</span></div><p id="last-action">Preview ready. Choose a scenario or touch the device.</p></section>
+
+          <details class="design-notes"><summary>Design principles in this screen</summary><div><p><strong>Calm hierarchy.</strong> One primary action per screen, with server health always one tap away.</p><p><strong>Local-first trust.</strong> Listening, privacy, and the terminal/server boundary are visible at the moment they matter.</p><p><strong>Progressive disclosure.</strong> Rooms and assistant are first-class; diagnostics and provisioning stay available without crowding the home.</p></div></details>
         </aside>
       </div>
     </main>
 
-    <script src="app.js"></script>
+    <script src="fixtures.js" defer></script>
+    <script src="app.js" defer></script>
   </body>
 </html>
