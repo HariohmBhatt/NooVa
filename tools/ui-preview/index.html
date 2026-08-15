@@ -21,6 +21,30 @@
           </header>
 
           <div class="screen-content">
+            <section class="telemetry-card" aria-labelledby="telemetry-heading">
+              <div class="section-heading">
+                <h2 id="telemetry-heading">Utilisation</h2>
+                <span>LAST 10 MIN</span>
+              </div>
+              <svg
+                class="telemetry-chart"
+                id="utilisation-chart"
+                viewBox="0 0 288 64"
+                role="img"
+                aria-label="CPU and GPU utilisation over the last ten minutes"
+              >
+                <line class="chart-grid" x1="0" y1="8" x2="288" y2="8"></line>
+                <line class="chart-grid" x1="0" y1="32" x2="288" y2="32"></line>
+                <line class="chart-grid" x1="0" y1="56" x2="288" y2="56"></line>
+                <polyline class="chart-line cpu-line" id="cpu-line" points=""></polyline>
+                <polyline class="chart-line gpu-line" id="gpu-line" points=""></polyline>
+              </svg>
+              <div class="chart-legend" aria-hidden="true">
+                <span><i class="legend-dot cpu-dot"></i>CPU <strong id="cpu-current"></strong></span>
+                <span><i class="legend-dot gpu-dot"></i>GPU <strong id="gpu-current"></strong></span>
+              </div>
+            </section>
+
             <section class="stats-card" aria-labelledby="stats-heading">
               <div class="section-heading">
                 <h2 id="stats-heading">Device stats</h2>
@@ -33,6 +57,14 @@
                 <div class="stat-row">
                   <dt>IP address</dt>
                   <dd id="ip-value"></dd>
+                </div>
+                <div class="stat-row">
+                  <dt>CPU utilisation</dt>
+                  <dd id="cpu-value"></dd>
+                </div>
+                <div class="stat-row">
+                  <dt>GPU utilisation</dt>
+                  <dd id="gpu-value"></dd>
                 </div>
                 <div class="stat-row">
                   <dt>Uptime</dt>

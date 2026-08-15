@@ -1,6 +1,10 @@
 (() => {
   "use strict";
 
+  const CHART_WIDTH = 288;
+  const CHART_TOP = 8;
+  const CHART_HEIGHT = 48;
+  const UTILISATION_MAX = 100;
   const fixtures = window.NovaFixtures;
   const elements = {};
   const state = {
@@ -15,10 +19,17 @@
     const ids = [
       "wifi-value",
       "ip-value",
+      "cpu-value",
+      "gpu-value",
       "uptime-value",
       "memory-value",
       "temperature-value",
       "firmware-value",
+      "utilisation-chart",
+      "cpu-line",
+      "gpu-line",
+      "cpu-current",
+      "gpu-current",
       "wifi-action",
       "wifi-sheet",
       "wifi-close",
@@ -39,10 +50,35 @@
     const stats = state.connected ? fixtures.stats.connected : fixtures.stats.disconnected;
     elements["wifi-value"].textContent = state.connected ? state.connectedNetwork : stats.wifi;
     elements["ip-value"].textContent = stats.ipAddress;
+    elements["cpu-value"].textContent = stats.cpu;
+    elements["gpu-value"].textContent = stats.gpu;
     elements["uptime-value"].textContent = stats.uptime;
     elements["memory-value"].textContent = stats.memoryFree;
     elements["temperature-value"].textContent = stats.temperature;
     elements["firmware-value"].textContent = stats.firmware;
+  }
+
+  function chartPoints(values) {
+    const step = CHART_WIDTH / (values.length - 1);
+    return values
+      .map((value, index) => {
+        const x = index * step;
+        const y = CHART_TOP + ((UTILISATION_MAX - value) / UTILISATION_MAX) * CHART_HEIGHT;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+  }
+
+  function renderTelemetry() {
+    const stats = state.connected ? fixtures.stats.connected : fixtures.stats.disconnected;
+    elements["cpu-line"].setAttribute("points", chartPoints(fixtures.telemetry.cpu));
+    elements["gpu-line"].setAttribute("points", chartPoints(fixtures.telemetry.gpu));
+    elements["cpu-current"].textContent = stats.cpu;
+    elements["gpu-current"].textContent = stats.gpu;
+    elements["utilisation-chart"].setAttribute(
+      "aria-label",
+      `CPU utilisation ${stats.cpu}, GPU utilisation ${stats.gpu}, over the last ten minutes`,
+    );
   }
 
   function renderNetworks() {
@@ -72,6 +108,7 @@
 
   function render() {
     renderStats();
+    renderTelemetry();
     renderNetworks();
     renderSheet();
   }
@@ -114,6 +151,7 @@
     state.connectedNetwork = state.selectedNetwork;
     closeWifi();
     renderStats();
+    renderTelemetry();
   }
 
   function connectWifi(event) {

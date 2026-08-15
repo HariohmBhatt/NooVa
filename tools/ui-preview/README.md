@@ -4,7 +4,8 @@ This is a dependency-free browser preview for the 320 × 480 Nova terminal.
 It intentionally presents one focused product surface:
 
 - current device status and connection state;
-- a short list of live device stats; and
+- a short list of device stats, including CPU and GPU utilisation;
+- one compact CPU/GPU utilisation time series; and
 - one Wi-Fi connection action, with a minimal network/password sheet.
 
 There is no navigation, assistant, room control, diagnostics console, or
