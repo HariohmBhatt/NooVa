@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nova firmware UI replica</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="prototype-shell">
+      <header class="prototype-header">
+        <p class="prototype-kicker">PROTOTYPE / LOCAL REPLICA</p>
+        <h1>Nova firmware UI</h1>
+        <p>
+          A browser-rendered stand-in for the 320 × 480 LVGL display. The device
+          surface mirrors <code>firmware/ui/UiController.cpp</code>; the panel
+          beside it supplies mock hardware state.
+        </p>
+      </header>
+
+      <div class="workspace">
+        <section class="device-frame" aria-label="Nova 320 by 480 display">
+          <div class="device-screen" id="device-screen">
+            <div class="app-title">NOVA  /  HOME AI HUB</div>
+            <div class="app-subtitle">LOCAL TERMINAL  /  ESP32-S3</div>
+
+            <main class="content">
+              <section class="page is-active" data-page="home">
+                <h2 class="page-title">HOME STATUS</h2>
+                <p class="server-time" id="home-clock">SERVER --</p>
+                <p class="status-line" id="home-state">HUB LIVE / NORMAL</p>
+                <p class="muted home-latency" id="home-latency">
+                  Latency 24 ms  /  NORMAL
+                </p>
+                <div class="metric-grid">
+                  <div class="metric-tile">
+                    <span>CPU</span>
+                    <strong id="home-cpu">12.4%</strong>
+                  </div>
+                  <div class="metric-tile">
+                    <span>RAM</span>
+                    <strong id="home-memory">3068/8192 MB</strong>
+                  </div>
+                  <div class="metric-tile">
+                    <span>DISK</span>
+                    <strong id="home-disk">42/128 GB</strong>
+                  </div>
+                  <div class="metric-tile">
+                    <span>NET RX/TX</span>
+                    <strong id="home-network">84/31 KB/s</strong>
+                  </div>
+                </div>
+                <p class="muted home-hint">Tap SERVER for detail  /  SETUP for network</p>
+              </section>
+
+              <section class="page" data-page="server">
+                <h2 class="page-title">SERVER DETAIL</h2>
+                <pre class="server-status" id="server-status"></pre>
+                <pre class="server-metrics" id="server-metrics"></pre>
+              </section>
+
+              <section class="page" data-page="setup">
+                <h2 class="page-title">TERMINAL SETUP</h2>
+                <pre class="setup-status" id="setup-status"></pre>
+                <p class="muted setup-hint">
+                  Hub registration and metrics connection<br />
+                  start automatically when Wi-Fi is ready.
+                </p>
+                <button class="screen-button setup-button wifi-button" id="setup-wifi">
+                  WI-FI
+                </button>
+                <button class="screen-button setup-button ssh-button" id="setup-ssh">
+                  SSH
+                </button>
+              </section>
+
+              <section class="page" data-page="diagnostics">
+                <h2 class="page-title">DIAGNOSTICS</h2>
+                <pre class="diagnostics-status" id="diagnostics-status"></pre>
+              </section>
+
+              <section class="page" data-page="wifi">
+                <h2 class="page-title">WI-FI SETUP</h2>
+                <button class="screen-button small-button back-button" id="wifi-back">
+                  BACK
+                </button>
+                <pre class="wifi-status" id="wifi-status"></pre>
+                <button class="screen-button small-button scan-button" id="wifi-scan">
+                  SCAN
+                </button>
+                <div class="wifi-list" id="wifi-list" aria-label="Wi-Fi networks"></div>
+                <label class="password-row is-hidden" id="wifi-password-row">
+                  <span class="sr-only">Wi-Fi password</span>
+                  <input id="wifi-password" type="password" placeholder="Wi-Fi password" />
+                </label>
+              </section>
+
+              <section class="page" data-page="ssh">
+                <h2 class="page-title">SSH DIAGNOSTICS</h2>
+                <button class="screen-button small-button back-button" id="ssh-back">
+                  BACK
+                </button>
+                <pre class="ssh-status" id="ssh-status"></pre>
+                <button class="screen-button small-button ssh-action-button" id="ssh-action">
+                  SET UP
+                </button>
+                <p class="ssh-instructions" id="ssh-instructions">
+                  LAN-only diagnostics.<br />
+                  The server exposes status commands,<br />
+                  not an operating-system shell.
+                </p>
+                <label class="password-row is-hidden" id="ssh-password-row">
+                  <span class="sr-only">SSH password</span>
+                  <input id="ssh-password" type="password" placeholder="SSH password" />
+                </label>
+              </section>
+
+              <section class="page" data-page="logs">
+                <h2 class="page-title">LIVE DEBUG LOG</h2>
+                <pre class="log-text" id="log-text"></pre>
+              </section>
+            </main>
+
+            <nav class="bottom-nav" id="bottom-nav" aria-label="Firmware pages">
+              <button class="nav-button is-active" data-target="home">HOME</button>
+              <button class="nav-button" data-target="server">SERVER</button>
+              <button class="nav-button" data-target="setup">SETUP</button>
+              <button class="nav-button" data-target="diagnostics">DIAG</button>
+              <button class="nav-button" data-target="logs">LOG</button>
+            </nav>
+
+            <section class="keyboard-overlay is-hidden" id="keyboard-overlay">
+              <p class="keyboard-caption" id="keyboard-caption">PASSWORD</p>
+              <div class="keyboard-keys" id="keyboard-keys"></div>
+              <div class="keyboard-actions">
+                <button class="keyboard-action" data-key-action="cancel">CANCEL</button>
+                <button class="keyboard-action ready" data-key-action="ready">READY</button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <aside class="prototype-controls">
+          <div class="control-header">
+            <span class="control-tag">MOCK HARDWARE</span>
+            <span class="control-size">320 × 480</span>
+          </div>
+          <h2>Interaction harness</h2>
+          <p class="muted">
+            Choose a hub scenario, then use the device itself. All state is
+            in-memory and resets on reload.
+          </p>
+          <div class="scenario-controls" aria-label="Mock hub scenario">
+            <button class="scenario-button is-selected" data-scenario="live">
+              LIVE
+            </button>
+            <button class="scenario-button" data-scenario="degraded">
+              DEGRADED
+            </button>
+            <button class="scenario-button" data-scenario="setup">
+              SETUP
+            </button>
+          </div>
+          <button class="reset-button" id="reset-demo">RESET DEMO</button>
+          <h3>Current state</h3>
+          <pre class="state-readout" id="state-readout"></pre>
+          <p class="control-note">
+            The local surface is intentionally separate from firmware
+            production code. It is a fast way to inspect page density and
+            touch flows before flashing the board.
+          </p>
+        </aside>
+      </div>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

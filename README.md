@@ -49,6 +49,16 @@ pio run --target clean
 pio run --target erase --upload-port /dev/cu.usbmodemXXXX
 ```
 
+## Local UI Replica
+
+The firmware UI can be exercised without the board through the dependency-free
+browser replica under tools/ui-preview/:
+
+    ./scripts/ui-preview.sh
+
+Open http://127.0.0.1:4173. It mirrors the 320 × 480 LVGL pages and includes
+mock live/degraded/setup hub states plus the Wi-Fi and SSH touchscreen flows.
+
 The default firmware is the first local hub-connection milestone. It initializes
 the verified display and touch paths, renders a local diagnostic UI, and keeps a
 bounded debug log visible on the screen. USB serial is only a development
