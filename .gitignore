@@ -11,3 +11,13 @@ compile_commands.json
 .DS_Store
 .vscode/.browse.c_cpp.db*
 .vscode/ipch/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local runtime databases
+*.db
+*.sqlite3

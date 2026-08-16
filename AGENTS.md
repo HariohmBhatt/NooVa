@@ -9,6 +9,24 @@ Firmware for the Waveshare ESP32-S3 Touch LCD 3.5.
 - Arduino
 - ESP32 Arduino Core
 
+## Repository boundaries
+
+- `firmware/` contains device-side firmware and hardware-facing services.
+- `backend/` contains the optional server-side hub and its tests.
+- `hardware/` contains board-specific experiments and acceptance tests.
+- `tools/` contains development and preview tooling; it must not become a firmware dependency.
+- `docs/` contains protocol and architecture decisions that affect more than one module.
+- Generated output, caches, local databases, and build artifacts do not belong in Git.
+
+## Architecture direction
+
+- Keep board and peripheral details behind small, testable interfaces.
+- Keep application and domain logic independent of GPIO, display drivers, and transport details.
+- Make dependencies point from composition and infrastructure toward stable application logic.
+- Treat `firmware/hardware/BoardPins.h` and official Waveshare documentation as the pin-assignment source of truth.
+- Prefer narrow modules with explicit ownership over feature logic concentrated in `main.cpp` or a controller class.
+- Record cross-cutting architectural decisions in `docs/` before making them implicit in code.
+
 ## Coding Standards
 
 - Modular architecture
@@ -48,5 +66,7 @@ When implementing a feature:
 1. Explain architecture.
 2. Explain affected files.
 3. Implement.
-4. Explain testing.
-5. Wait for confirmation.
+4. Keep the change compiling after each coherent step.
+5. Explain and run the relevant tests or hardware checks.
+6. Commit the complete change with an explanatory message.
+7. Wait for confirmation before starting unrelated work.
