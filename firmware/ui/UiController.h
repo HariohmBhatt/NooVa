@@ -9,16 +9,22 @@
 #include "../hardware/BoardDisplay.h"
 #include "../hardware/BoardPins.h"
 #include "../hardware/BoardTouch.h"
-#include "../network/SshService.h"
 #include "../network/WifiService.h"
 
 namespace nova {
 
+/**
+ * Owns the single device-status view and its transient Wi-Fi setup sheet.
+ *
+ * Local services provide Wi-Fi, memory, temperature, uptime, and CPU data.
+ * GPU values stay unavailable until a server telemetry transport is defined;
+ * the UI never fabricates a remote metric.
+ */
 class UiController {
  public:
   /** Connect LVGL to board services and build the device status screen. */
   UiController(BoardDisplay& display, BoardTouch& touch, Logger& logger,
-               WifiService& wifi, SshService& ssh);
+               WifiService& wifi);
 
   /** Initialize LVGL and create the dashboard and Wi-Fi setup sheet. */
   bool begin();
@@ -35,12 +41,24 @@ class UiController {
     WifiSetup,
   };
 
+  enum class Stat : uint8_t {
+    Wifi,
+    IpAddress,
+    Cpu,
+    Gpu,
+    Uptime,
+    MemoryFree,
+    Temperature,
+    Firmware,
+    Count,
+  };
+
   static constexpr uint8_t kBufferLines = 40;
   static constexpr uint8_t kCpuCoreCount = 2;
   static constexpr uint32_t kRefreshPeriodMs = 500;
-  static constexpr uint32_t kChartPeriodMs = 5000;
-  static constexpr size_t kChartPointCount = 8;
-  static constexpr size_t kStatCount = 8;
+  static constexpr uint32_t kChartPeriodMs = 60000;
+  static constexpr size_t kChartPointCount = 11;
+  static constexpr size_t kStatCount = static_cast<size_t>(Stat::Count);
   static constexpr int16_t kMetricUnavailable = -1;
 
   static void flushDisplay(lv_disp_drv_t* driver, const lv_area_t* area,
@@ -52,24 +70,28 @@ class UiController {
 
   void buildUi();
   void buildDashboard();
+  void buildTelemetry(lv_obj_t* telemetry);
+  void buildStats(lv_obj_t* stats);
   void buildWifiSheet();
+  void buildWifiPasswordControls();
   void refreshDashboard();
   void refreshStats();
   void refreshChart();
   void refreshWifiSheet();
+  bool registerIdleHooks();
   void sampleCpuUsage();
-  void setStatValue(size_t index, const char* value);
+  void setStatValue(Stat stat, const char* value);
   void showWifiSheet();
   void hideWifiSheet();
   void showWifiPassword(size_t networkIndex);
   void hideWifiPassword();
+  void setWifiPasswordMode(bool visible);
   void renderWifiNetworks();
 
   BoardDisplay& display_;
   BoardTouch& touch_;
   Logger& logger_;
   WifiService& wifi_;
-  SshService& ssh_;
   lv_disp_draw_buf_t drawBuffer_ = {};
   lv_disp_drv_t displayDriver_ = {};
   lv_indev_drv_t inputDriver_ = {};
@@ -94,7 +116,7 @@ class UiController {
 
   int16_t cpuHistory_[kChartPointCount] = {};
   int16_t gpuHistory_[kChartPointCount] = {};
-  uint32_t lastIdleRuntime_[kCpuCoreCount] = {};
+  uint32_t lastIdleTickCount_[kCpuCoreCount] = {};
   uint32_t lastCpuSampleAt_ = 0;
   uint32_t lastRefreshAt_ = 0;
   uint32_t lastChartAt_ = 0;
@@ -102,6 +124,7 @@ class UiController {
   size_t selectedNetworkIndex_ = WifiService::kMaxNetworks;
   size_t renderedNetworkCount_ = WifiService::kMaxNetworks;
   bool cpuSampleReady_ = false;
+  bool idleHooksReady_ = false;
   bool chartSeeded_ = false;
   bool wifiListDirty_ = true;
   bool renderedScanInProgress_ = false;

@@ -1,7 +1,8 @@
 #include "UiController.h"
 
 #include <Arduino.h>
-#include <freertos/task.h>
+#include <esp_freertos_hooks.h>
+#include <freertos/FreeRTOS.h>
 
 #include <cmath>
 #include <cstdio>
@@ -30,11 +31,28 @@ constexpr int16_t kStatsHeight = 222;
 constexpr int16_t kActionY = 410;
 constexpr int16_t kActionHeight = 52;
 constexpr int16_t kStatRowHeight = 20;
+constexpr int16_t kPanelInnerX = 12;
+constexpr int16_t kStatValueX = 164;
+constexpr int16_t kStatValueWidth = 116;
+constexpr int16_t kDividerWidth = 268;
+constexpr int16_t kWifiSheetWidth = 288;
+constexpr int16_t kWifiListY = 158;
+constexpr uint8_t kIdleCoreCount = 2;
 
 constexpr const char* kStatNames[] = {
     "Wi-Fi",          "IP address", "CPU utilisation", "GPU utilisation",
     "Uptime",         "Memory free", "Temperature",     "Firmware",
 };
+
+volatile uint32_t gIdleTickCounts[kIdleCoreCount] = {};
+
+bool recordIdleTick() {
+  const BaseType_t core = xPortGetCoreID();
+  if (core >= 0 && core < kIdleCoreCount) {
+    ++gIdleTickCounts[core];
+  }
+  return true;
+}
 
 void styleSurface(lv_obj_t* object, uint32_t background, uint32_t text,
                   uint32_t border, uint16_t radius) {
@@ -117,12 +135,11 @@ void formatUptime(uint32_t uptimeSeconds, char* output, size_t capacity) {
 }  // namespace
 
 UiController::UiController(BoardDisplay& display, BoardTouch& touch,
-                           Logger& logger, WifiService& wifi, SshService& ssh)
+                           Logger& logger, WifiService& wifi)
     : display_(display),
       touch_(touch),
       logger_(logger),
-      wifi_(wifi),
-      ssh_(ssh) {}
+      wifi_(wifi) {}
 
 bool UiController::begin() {
   if (!display_.isReady()) {
@@ -146,6 +163,7 @@ bool UiController::begin() {
   inputDriver_.user_data = this;
   lv_indev_drv_register(&inputDriver_);
 
+  idleHooksReady_ = registerIdleHooks();
   buildUi();
   lastRefreshAt_ = millis();
   lastChartAt_ = millis();
@@ -279,13 +297,27 @@ void UiController::buildDashboard() {
   lv_obj_set_style_text_letter_space(wordmark, 2, LV_PART_MAIN);
   createLabel(screen, "DEVICE STATUS", 194, 13, 110, 20, kFaintTextColor);
 
-  lv_obj_t* telemetry =
-      createPanel(screen, kMargin, kTelemetryY, kContentWidth, kTelemetryHeight);
-  createLabel(telemetry, "Utilisation", 12, 8, 100, 20, kTextColor);
+  lv_obj_t* telemetry = createPanel(screen, kMargin, kTelemetryY, kContentWidth,
+                                    kTelemetryHeight);
+  buildTelemetry(telemetry);
+
+  lv_obj_t* stats = createPanel(screen, kMargin, kStatsY, kContentWidth,
+                                kStatsHeight);
+  buildStats(stats);
+
+  wifiActionButton_ = createButton(screen, "Connect to Wi-Fi", kMargin,
+                                   kActionY, kContentWidth, kActionHeight,
+                                   kMintColor, kActionTextColor);
+  lv_obj_add_event_cb(wifiActionButton_, handleDashboardControls,
+                      LV_EVENT_CLICKED, this);
+}
+
+void UiController::buildTelemetry(lv_obj_t* telemetry) {
+  createLabel(telemetry, "Utilisation", kPanelInnerX, 8, 100, 20, kTextColor);
   createLabel(telemetry, "10 MIN", 246, 10, 34, 16, kFaintTextColor);
   telemetryChart_ = lv_chart_create(telemetry);
   lv_obj_set_size(telemetryChart_, 268, 54);
-  lv_obj_set_pos(telemetryChart_, 12, 30);
+  lv_obj_set_pos(telemetryChart_, kPanelInnerX, 30);
   styleSurface(telemetryChart_, kPanelColor, kTextColor, kPanelColor, 0);
   lv_chart_set_type(telemetryChart_, LV_CHART_TYPE_LINE);
   lv_chart_set_point_count(telemetryChart_, kChartPointCount);
@@ -313,29 +345,26 @@ void UiController::buildDashboard() {
   }
   cpuLegend_ = createLabel(telemetry, "CPU --", 14, 86, 68, 16, kMintColor);
   gpuLegend_ = createLabel(telemetry, "GPU --", 84, 86, 68, 16, kGoldColor);
+}
 
-  lv_obj_t* stats = createPanel(screen, kMargin, kStatsY, kContentWidth,
-                                kStatsHeight);
-  createLabel(stats, "Device stats", 12, 8, 150, 20, kTextColor);
+void UiController::buildStats(lv_obj_t* stats) {
+  createLabel(stats, "Device stats", kPanelInnerX, 8, 150, 20, kTextColor);
   for (size_t index = 0; index < kStatCount; ++index) {
     const int16_t y = 34 + static_cast<int16_t>(index) * kStatRowHeight;
     if (index > 0) {
       lv_obj_t* divider = lv_obj_create(stats);
-      lv_obj_set_size(divider, 268, 1);
-      lv_obj_set_pos(divider, 12, y - 4);
+      lv_obj_set_size(divider, kDividerWidth, 1);
+      lv_obj_set_pos(divider, kPanelInnerX, y - 4);
       styleSurface(divider, kLineColor, kLineColor, kLineColor, 0);
     }
-    createLabel(stats, kStatNames[index], 12, y, 150, 18, kMutedTextColor);
-    statValues_[index] = createLabel(stats, "--", 164, y, 116, 18, kTextColor);
+    createLabel(stats, kStatNames[index], kPanelInnerX, y, 150, 18,
+                kMutedTextColor);
+    statValues_[index] =
+        createLabel(stats, "--", kStatValueX, y, kStatValueWidth, 18,
+                    kTextColor);
     lv_obj_set_style_text_align(statValues_[index], LV_TEXT_ALIGN_RIGHT,
                                 LV_PART_MAIN);
   }
-
-  wifiActionButton_ = createButton(screen, "Connect to Wi-Fi", kMargin,
-                                   kActionY, kContentWidth, kActionHeight,
-                                   kMintColor, kActionTextColor);
-  lv_obj_add_event_cb(wifiActionButton_, handleDashboardControls,
-                      LV_EVENT_CLICKED, this);
 }
 
 void UiController::buildWifiSheet() {
@@ -359,15 +388,22 @@ void UiController::buildWifiSheet() {
                                  kPanelColor, kTextColor);
   lv_obj_add_event_cb(wifiScanButton_, handleWifiControls, LV_EVENT_CLICKED,
                       this);
-  wifiList_ = createPanel(wifiSheet_, 16, 158, 288, 244);
+  wifiList_ = lv_list_create(wifiSheet_);
+  lv_obj_set_size(wifiList_, kWifiSheetWidth, 244);
+  lv_obj_set_pos(wifiList_, 16, kWifiListY);
+  styleSurface(wifiList_, kPanelColor, kTextColor, kLineColor, 14);
 
-  wifiBackButton_ = createButton(wifiSheet_, "BACK", 16, 158, 92, 38,
-                                kPanelColor, kTextColor);
+  buildWifiPasswordControls();
+}
+
+void UiController::buildWifiPasswordControls() {
+  wifiBackButton_ = createButton(wifiSheet_, "BACK", 16, kWifiListY, 92, 38,
+                                 kPanelColor, kTextColor);
   lv_obj_add_event_cb(wifiBackButton_, handleWifiControls, LV_EVENT_CLICKED,
                       this);
   wifiPassword_ = lv_textarea_create(wifiSheet_);
   lv_obj_set_size(wifiPassword_, 188, 38);
-  lv_obj_set_pos(wifiPassword_, 116, 158);
+  lv_obj_set_pos(wifiPassword_, 116, kWifiListY);
   lv_textarea_set_one_line(wifiPassword_, true);
   lv_textarea_set_password_mode(wifiPassword_, true);
   lv_textarea_set_placeholder_text(wifiPassword_, "Password");
@@ -396,28 +432,29 @@ void UiController::refreshDashboard() {
 void UiController::refreshStats() {
   char value[48] = {};
   const bool connected = wifi_.state() == WifiState::Connected;
-  setStatValue(0, connected ? wifi_.configuredSsid() : wifi_.stateName());
-  setStatValue(1, connected ? wifi_.ipAddress().toString().c_str() : "--");
+  setStatValue(Stat::Wifi, connected ? wifi_.configuredSsid() : wifi_.stateName());
+  setStatValue(Stat::IpAddress,
+               connected ? wifi_.ipAddress().toString().c_str() : "--");
   if (cpuUsagePercent_ >= 0) {
     snprintf(value, sizeof(value), "%d%%", cpuUsagePercent_);
-    setStatValue(2, value);
+    setStatValue(Stat::Cpu, value);
   } else {
-    setStatValue(2, "--");
+    setStatValue(Stat::Cpu, "--");
   }
-  setStatValue(3, "--");
+  setStatValue(Stat::Gpu, "--");
   formatUptime(millis() / 1000, value, sizeof(value));
-  setStatValue(4, value);
+  setStatValue(Stat::Uptime, value);
   snprintf(value, sizeof(value), "%.1f MB",
            static_cast<double>(ESP.getFreeHeap()) / 1024.0);
-  setStatValue(5, value);
+  setStatValue(Stat::MemoryFree, value);
   const float temperature = temperatureRead();
   if (std::isfinite(temperature)) {
     snprintf(value, sizeof(value), "%.1f C", static_cast<double>(temperature));
-    setStatValue(6, value);
+    setStatValue(Stat::Temperature, value);
   } else {
-    setStatValue(6, "--");
+    setStatValue(Stat::Temperature, "--");
   }
-  setStatValue(7, kFirmwareVersion);
+  setStatValue(Stat::Firmware, kFirmwareVersion);
 }
 
 void UiController::refreshChart() {
@@ -465,24 +502,30 @@ void UiController::refreshWifiSheet() {
   }
 }
 
-void UiController::sampleCpuUsage() {
-#if configGENERATE_RUN_TIME_STATS == 1
-  uint32_t idleRuntime[kCpuCoreCount] = {};
+bool UiController::registerIdleHooks() {
   for (uint8_t core = 0; core < kCpuCoreCount; ++core) {
-    TaskHandle_t idleTask = xTaskGetIdleTaskHandleForCPU(core);
-    if (idleTask == nullptr) {
-      cpuUsagePercent_ = kMetricUnavailable;
-      return;
+    if (esp_register_freertos_idle_hook_for_cpu(recordIdleTick, core) !=
+        ESP_OK) {
+      for (uint8_t registered = 0; registered < core; ++registered) {
+        esp_deregister_freertos_idle_hook_for_cpu(recordIdleTick, registered);
+      }
+      logger_.write(LogLevel::Warning, "CPU idle hooks unavailable");
+      return false;
     }
-    TaskStatus_t status = {};
-    vTaskGetInfo(idleTask, &status, pdFALSE, eInvalid);
-    idleRuntime[core] = status.ulRunTimeCounter;
   }
+  return true;
+}
 
+void UiController::sampleCpuUsage() {
+  if (!idleHooksReady_) {
+    cpuUsagePercent_ = kMetricUnavailable;
+    lastCpuSampleAt_ = millis();
+    return;
+  }
   const uint32_t now = millis();
   if (!cpuSampleReady_) {
     for (uint8_t core = 0; core < kCpuCoreCount; ++core) {
-      lastIdleRuntime_[core] = idleRuntime[core];
+      lastIdleTickCount_[core] = gIdleTickCounts[core];
     }
     lastCpuSampleAt_ = now;
     cpuSampleReady_ = true;
@@ -490,29 +533,29 @@ void UiController::sampleCpuUsage() {
   }
 
   const uint32_t elapsedMs = now - lastCpuSampleAt_;
-  uint32_t idleDelta = 0;
+  uint32_t idleTicks = 0;
   for (uint8_t core = 0; core < kCpuCoreCount; ++core) {
-    idleDelta += idleRuntime[core] - lastIdleRuntime_[core];
-    lastIdleRuntime_[core] = idleRuntime[core];
+    idleTicks += gIdleTickCounts[core] - lastIdleTickCount_[core];
+    lastIdleTickCount_[core] = gIdleTickCounts[core];
   }
   lastCpuSampleAt_ = now;
-  const uint64_t capacity = static_cast<uint64_t>(elapsedMs) * 1000ULL *
-                            getCpuFrequencyMhz() * kCpuCoreCount;
-  if (capacity == 0) {
+  const uint32_t ticksPerCore = elapsedMs / portTICK_PERIOD_MS;
+  const uint32_t totalTicks = ticksPerCore * kCpuCoreCount;
+  if (totalTicks == 0) {
     return;
   }
-  const uint64_t busyRuntime = idleDelta >= capacity ? 0 : capacity - idleDelta;
-  cpuUsagePercent_ = static_cast<int16_t>((busyRuntime * 100) / capacity);
+  if (idleTicks > totalTicks) {
+    idleTicks = totalTicks;
+  }
+  const uint32_t busyTicks = totalTicks - idleTicks;
+  cpuUsagePercent_ = static_cast<int16_t>((busyTicks * 100) / totalTicks);
   if (cpuUsagePercent_ > 100) {
     cpuUsagePercent_ = 100;
   }
-#else
-  cpuUsagePercent_ = kMetricUnavailable;
-  lastCpuSampleAt_ = millis();
-#endif
 }
 
-void UiController::setStatValue(size_t index, const char* value) {
+void UiController::setStatValue(Stat stat, const char* value) {
+  const size_t index = static_cast<size_t>(stat);
   if (index >= kStatCount || statValues_[index] == nullptr) {
     return;
   }
@@ -523,11 +566,7 @@ void UiController::showWifiSheet() {
   view_ = View::WifiSetup;
   selectedNetworkIndex_ = WifiService::kMaxNetworks;
   lv_obj_clear_flag(wifiSheet_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(wifiList_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(wifiScanButton_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(wifiBackButton_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
+  setWifiPasswordMode(false);
   lv_label_set_text(wifiStatus_, "Scanning for nearby networks...");
   wifiListDirty_ = true;
   wifi_.startScan();
@@ -538,11 +577,7 @@ void UiController::hideWifiSheet() {
   view_ = View::Dashboard;
   selectedNetworkIndex_ = WifiService::kMaxNetworks;
   lv_obj_add_flag(wifiSheet_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(wifiBackButton_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(wifiList_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(wifiScanButton_, LV_OBJ_FLAG_HIDDEN);
+  setWifiPasswordMode(false);
 }
 
 void UiController::showWifiPassword(size_t networkIndex) {
@@ -559,25 +594,34 @@ void UiController::showWifiPassword(size_t networkIndex) {
   selectedNetworkIndex_ = networkIndex;
   lv_textarea_set_text(wifiPassword_, "");
   lv_label_set_text_fmt(wifiStatus_, "Password for %s", network->ssid);
-  lv_obj_add_flag(wifiList_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(wifiScanButton_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(wifiBackButton_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
+  setWifiPasswordMode(true);
   lv_keyboard_set_textarea(wifiKeyboard_, wifiPassword_);
 }
 
 void UiController::hideWifiPassword() {
   selectedNetworkIndex_ = WifiService::kMaxNetworks;
+  setWifiPasswordMode(false);
+  lv_label_set_text(wifiStatus_, "Choose a nearby network.");
+}
+
+void UiController::setWifiPasswordMode(bool visible) {
+  if (visible) {
+    lv_obj_add_flag(wifiList_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(wifiScanButton_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(wifiBackButton_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
   lv_obj_add_flag(wifiBackButton_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_clear_flag(wifiList_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_clear_flag(wifiScanButton_, LV_OBJ_FLAG_HIDDEN);
-  lv_label_set_text(wifiStatus_, "Choose a nearby network.");
 }
 
 void UiController::renderWifiNetworks() {
+  // Rebuild only after a scan state/count change, never on every UI tick.
   while (lv_obj_get_child(wifiList_, 0) != nullptr) {
     lv_obj_del(lv_obj_get_child(wifiList_, 0));
   }

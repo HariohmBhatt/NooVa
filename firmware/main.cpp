@@ -21,7 +21,7 @@ nova::BoardTouch gTouch;
 nova::WifiService gWifi(gLogger);
 nova::SshService gSsh(gLogger, gWifi);
 nova::OtaService gOta(gLogger, gWifi, gSsh);
-nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gSsh);
+nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi);
 bool gRemoteServicesPaused = false;
 
 void pauseAppliance() {
