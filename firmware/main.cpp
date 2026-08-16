@@ -8,6 +8,9 @@
 #include "network/WifiService.h"
 #include "network/OtaService.h"
 #include "network/ServerTelemetryService.h"
+#include "storage/TelemetryStorage.h"
+#include "telemetry/EspHealthService.h"
+#include "telemetry/TelemetryRecorder.h"
 #include "ui/UiController.h"
 
 namespace {
@@ -20,10 +23,14 @@ nova::ButtonService gButtons(gLogger);
 nova::BoardDisplay gDisplay;
 nova::BoardTouch gTouch;
 nova::WifiService gWifi(gLogger);
+nova::TelemetryStorage gStorage(gLogger);
+nova::EspHealthService gEspHealth(gLogger, gStorage);
 nova::ServerTelemetryService gTelemetry(gLogger, gWifi);
+nova::TelemetryRecorder gRecorder(gLogger, gStorage, gTelemetry, gEspHealth);
 nova::SshService gSsh(gLogger, gWifi);
 nova::OtaService gOta(gLogger, gWifi, gSsh);
-nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gTelemetry);
+nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gTelemetry,
+                       gEspHealth);
 bool gRemoteServicesPaused = false;
 
 void pauseAppliance() {
@@ -63,12 +70,25 @@ void setup() {
     gLogger.write(nova::LogLevel::Error, "Button service initialization failed");
   }
 
+  if (!gStorage.begin()) {
+    gLogger.write(nova::LogLevel::Warning,
+                  "Local telemetry storage initialization failed");
+  }
+  if (!gEspHealth.begin()) {
+    gLogger.write(nova::LogLevel::Warning,
+                  "ESP health sampling initialization failed");
+  }
+
   if (!gWifi.begin()) {
     gLogger.write(nova::LogLevel::Error, "Wi-Fi service initialization failed");
   }
   if (!gTelemetry.begin()) {
     gLogger.write(nova::LogLevel::Error,
                   "Server telemetry initialization failed");
+  }
+  if (!gRecorder.begin()) {
+    gLogger.write(nova::LogLevel::Warning,
+                  "Telemetry recorder initialization failed");
   }
   if (!gSsh.begin()) {
     gLogger.write(nova::LogLevel::Error, "SSH service initialization failed");
@@ -89,7 +109,9 @@ void loop() {
     pauseAppliance();
   }
   gWifi.update();
+  gEspHealth.update();
   gTelemetry.update();
+  gRecorder.update();
   gSsh.update();
   gOta.update();
   gUi.update();

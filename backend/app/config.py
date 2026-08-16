@@ -20,6 +20,7 @@ class Settings:
     metrics_disk_root: Path = Path("/")
     metrics_interface: str | None = None
     metrics_gpu_library: str = "/host/root/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1"
+    telemetry_interval_seconds: float = 5.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -38,5 +39,8 @@ class Settings:
             metrics_gpu_library=os.getenv(
                 "NOVA_GPU_NVML_LIBRARY",
                 "/host/root/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1",
+            ),
+            telemetry_interval_seconds=float(
+                os.getenv("NOVA_TELEMETRY_INTERVAL_SECONDS", "5")
             ),
         )

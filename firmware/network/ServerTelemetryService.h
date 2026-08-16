@@ -1,15 +1,19 @@
 #pragma once
 
 #include <Arduino.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 
+#include <cstddef>
 #include <cstdint>
 
 #include "../core/Logger.h"
+#include "../telemetry/TelemetryItem.h"
 #include "WifiService.h"
 
 namespace nova {
 
-/** State of the last server telemetry request. */
+/** State of the persistent server telemetry stream. */
 enum class ServerTelemetryState : uint8_t {
   Unconfigured,
   Offline,
@@ -19,7 +23,7 @@ enum class ServerTelemetryState : uint8_t {
   Error,
 };
 
-/** Latest host and GPU values returned by the NOVA hub API. */
+/** Latest host and GPU values decoded from the server stream. */
 struct ServerTelemetrySnapshot {
   bool valid = false;
   bool gpuAvailable = false;
@@ -28,13 +32,17 @@ struct ServerTelemetrySnapshot {
   float gpuTemperatureC = -1.0F;
   uint64_t gpuVramUsedBytes = 0;
   uint64_t gpuVramTotalBytes = 0;
+  uint32_t uptimeSeconds = 0;
+  uint32_t errorCount = 0;
+  uint32_t sequence = 0;
+  uint64_t timestampSeconds = 0;
   uint32_t receivedAtMs = 0;
   char gpuName[64] = {};
   char dependencyStatus[12] = {};
   char error[64] = {};
 };
 
-/** Poll the hub's read-only telemetry API over the configured CA. */
+/** Stream compact host telemetry and expose its latest decoded item. */
 class ServerTelemetryService {
  public:
   /** Construct a server telemetry client sharing the board Wi-Fi service. */
@@ -43,33 +51,46 @@ class ServerTelemetryService {
   /** Prepare the secure client and verify that a trust anchor is available. */
   bool begin();
 
-  /** Poll the hub when due and update the latest snapshot. */
+  /** Pump a bounded amount of stream data without blocking the main loop. */
   void update();
 
   /** Return the most recently received host and GPU metrics. */
   const ServerTelemetrySnapshot& snapshot() const;
 
-  /** Return the current request/availability state. */
+  /** Return the complete item that produced the current snapshot. */
+  const TelemetryItem& latestItem() const;
+
+  /** Return the current stream availability state. */
   ServerTelemetryState state() const;
 
   /** Return a concise state name suitable for diagnostics. */
   const char* stateName() const;
 
  private:
-  static constexpr uint32_t kPollPeriodMs = 5000;
+  static constexpr uint32_t kReconnectPeriodMs = 5000;
   static constexpr uint32_t kStaleAfterMs = 15000;
   static constexpr uint32_t kRequestTimeoutMs = 2500;
+  static constexpr size_t kMaxBytesPerUpdate = 256;
 
-  bool fetch(uint32_t now);
-  bool parseResponse(Stream& body, uint32_t now);
+  bool openStream();
+  void closeStream();
+  void pumpStream(uint32_t now);
+  void processFrame(const TelemetryItem& item, uint32_t now);
+  void discardLeadingByte();
   void setError(const char* message);
-  static void copyText(char* destination, size_t capacity, const char* source);
 
   Logger& logger_;
   WifiService& wifi_;
+  WiFiClientSecure tls_;
+  HTTPClient http_;
   ServerTelemetrySnapshot snapshot_ = {};
+  TelemetryItem latestItem_ = {};
   ServerTelemetryState state_ = ServerTelemetryState::Unconfigured;
-  uint32_t lastPollAt_ = 0;
+  uint8_t frameBuffer_[kTelemetryFrameSize] = {};
+  size_t frameBytes_ = 0;
+  uint32_t lastConnectAttemptAt_ = 0;
+  uint32_t lastFrameAt_ = 0;
+  bool streamOpen_ = false;
   bool ready_ = false;
 };
 

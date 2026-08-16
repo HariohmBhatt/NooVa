@@ -116,6 +116,45 @@ When NVIDIA NVML is available, the payload also includes `gpu_state`, `gpu_count
 
 `home_time` is server-synchronized wall-clock time in the configured home timezone. Envelope timestamps remain UTC for protocol tracing. B reports only `hub_api` and `metrics` service status; Home Assistant and MQTT are added in later phases.
 
+## Compact telemetry stream
+
+`GET /v1/telemetry/stream` is the low-overhead transport used by the board. It
+returns a continuous `application/x-nova-telemetry` body with one fixed-width,
+little-endian item every five seconds. The item is 64 bytes, so the ESP32 can
+decode it with a bounded buffer and resynchronize on the `NVT1` magic after a
+partial read or transport framing byte.
+
+| Offset | Size | Field | Meaning |
+| ---: | ---: | --- | --- |
+| 0 | 4 | `magic` | ASCII `NVT1` |
+| 4 | 1 | `version` | Stream version, currently `1` |
+| 5 | 1 | `kind` | `1` server health, `2` ESP health |
+| 6 | 2 | `frame_size` | Always `64` |
+| 8 | 4 | `sequence` | Monotonic item sequence for one stream |
+| 12 | 8 | `timestamp_seconds` | Server wall-clock timestamp when known |
+| 20 | 2 | `cpu_tenths` | CPU percentage multiplied by ten, signed |
+| 22 | 2 | `gpu_utilization_tenths` | GPU percentage multiplied by ten, signed |
+| 24 | 2 | `gpu_temperature_tenths` | GPU temperature in °C multiplied by ten, signed |
+| 26 | 2 | `flags` | Availability and degraded-state bits |
+| 28 | 8 | `metric_a` | Server: GPU VRAM used; ESP: journal bytes available |
+| 36 | 8 | `metric_b` | Server: GPU VRAM total; ESP: journal quota |
+| 44 | 4 | `uptime_seconds` | Uptime of the item producer |
+| 48 | 4 | `error_count` | Number of collection errors in the snapshot |
+| 52 | 8 | `reserved` | Zero-filled for forward compatibility |
+| 60 | 4 | `crc32` | IEEE CRC-32 over offsets `0..59` |
+
+The server item carries the current CPU/GPU state, including GPU utilisation,
+temperature, and VRAM. Bit 0 means a GPU is available and bit 1 means the
+server snapshot is degraded. The ESP health item carries board CPU and the
+bounded journal accounting; bit 2 means the TF card is mounted.
+
+The board persists both item kinds as fixed records at `/nova/telemetry.jrn`
+inside the SD_MMC `/sdcard` mount. A dual-slot index at
+`/nova/telemetry.idx` makes the write cursor and record count recoverable after
+an interrupted write. The journal has a logical ceiling of 2 GiB and grows only
+as records arrive; the remainder of the card is not preallocated or formatted
+by the firmware. Once full, it wraps as a bounded circular journal.
+
 ## Client messages
 
 - `device.ping`: optional liveness message; the server answers `server.pong`.

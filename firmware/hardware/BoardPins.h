@@ -22,5 +22,9 @@ constexpr uint8_t kBootButtonPin = 0;
 constexpr bool kBootButtonPressedLevel = false;
 constexpr uint8_t kPwrButtonExpanderPin = 6;
 constexpr bool kPwrButtonPressedLevel = true;
+// Values match the official Waveshare 07_sd_card_test 1-bit configuration.
+constexpr uint8_t kSdClockPin = 11;
+constexpr uint8_t kSdCommandPin = 10;
+constexpr uint8_t kSdData0Pin = 9;
 
 }  // namespace nova::board

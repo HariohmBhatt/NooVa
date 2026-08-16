@@ -1,8 +1,6 @@
 #include "UiController.h"
 
 #include <Arduino.h>
-#include <esp_freertos_hooks.h>
-#include <freertos/FreeRTOS.h>
 
 #include <algorithm>
 #include <cmath>
@@ -27,41 +25,23 @@ constexpr int16_t kContentWidth = 292;
 constexpr int16_t kTelemetryY = 46;
 constexpr int16_t kTelemetryHeight = 106;
 constexpr int16_t kStatsY = 160;
-constexpr int16_t kStatsHeight = 242;
+constexpr int16_t kStatsHeight = 238;
 constexpr int16_t kActionY = 410;
 constexpr int16_t kActionHeight = 52;
-constexpr int16_t kStatRowHeight = 20;
+constexpr int16_t kStatRowHeight = 18;
 constexpr int16_t kPanelInnerX = 12;
 constexpr int16_t kStatValueX = 164;
 constexpr int16_t kStatValueWidth = 116;
 constexpr int16_t kDividerWidth = 268;
 constexpr int16_t kWifiSheetWidth = 288;
 constexpr int16_t kWifiListY = 158;
-constexpr uint8_t kIdleCoreCount = 2;
 
 constexpr const char* kStatNames[] = {
-    "Wi-Fi",          "IP address",      "CPU utilisation",
-    "GPU utilisation", "GPU temperature", "GPU VRAM",
-    "Uptime",         "Memory free",     "Temperature",
+    "Wi-Fi",          "IP address",       "Server CPU",
+    "ESP CPU",        "GPU utilisation", "GPU temperature",
+    "GPU VRAM",       "Storage",          "Uptime",
+    "Memory free",    "Temperature",
 };
-
-volatile uint32_t gIdleTickCounts[kIdleCoreCount] = {};
-volatile uint32_t gCpuTickCounts[kIdleCoreCount] = {};
-
-bool IRAM_ATTR recordIdleTick() {
-  const BaseType_t core = xPortGetCoreID();
-  if (core >= 0 && core < kIdleCoreCount) {
-    ++gIdleTickCounts[core];
-  }
-  return true;
-}
-
-void IRAM_ATTR recordCpuTick() {
-  const BaseType_t core = xPortGetCoreID();
-  if (core >= 0 && core < kIdleCoreCount) {
-    ++gCpuTickCounts[core];
-  }
-}
 
 void styleSurface(lv_obj_t* object, uint32_t background, uint32_t text,
                   uint32_t border, uint16_t radius) {
@@ -145,12 +125,14 @@ void formatUptime(uint32_t uptimeSeconds, char* output, size_t capacity) {
 
 UiController::UiController(BoardDisplay& display, BoardTouch& touch,
                            Logger& logger, WifiService& wifi,
-                           ServerTelemetryService& telemetry)
+                           ServerTelemetryService& telemetry,
+                           EspHealthService& espHealth)
     : display_(display),
       touch_(touch),
       logger_(logger),
       wifi_(wifi),
-      telemetry_(telemetry) {}
+      telemetry_(telemetry),
+      espHealth_(espHealth) {}
 
 bool UiController::begin() {
   if (!display_.isReady()) {
@@ -174,9 +156,9 @@ bool UiController::begin() {
   inputDriver_.user_data = this;
   lv_indev_drv_register(&inputDriver_);
 
-  cpuHooksReady_ = registerCpuHooks();
   buildUi();
   lastRefreshAt_ = millis();
+  lastDashboardAt_ = lastRefreshAt_;
   lastChartAt_ = millis();
   ready_ = true;
   logger_.write(LogLevel::Info, "Device status UI initialized");
@@ -191,9 +173,10 @@ void UiController::update() {
   const uint32_t now = millis();
   lv_tick_inc(now - lastRefreshAt_);
   lastRefreshAt_ = now;
-  if (now - lastCpuSampleAt_ >= kRefreshPeriodMs) {
+  if (now - lastDashboardAt_ >= kRefreshPeriodMs) {
     refreshDashboard();
     refreshWifiSheet();
+    lastDashboardAt_ = now;
   }
   lv_timer_handler();
 }
@@ -435,7 +418,6 @@ void UiController::buildWifiPasswordControls() {
 }
 
 void UiController::refreshDashboard() {
-  sampleCpuUsage();
   refreshStats();
   refreshChart();
 }
@@ -446,13 +428,28 @@ void UiController::refreshStats() {
   setStatValue(Stat::Wifi, connected ? wifi_.configuredSsid() : wifi_.stateName());
   setStatValue(Stat::IpAddress,
                connected ? wifi_.ipAddress().toString().c_str() : "--");
-  cpuUsagePercent_ = currentCpuPercent();
+  const EspHealthSnapshot& local = espHealth_.snapshot();
+  serverCpuPercent_ = kMetricUnavailable;
+  if ((telemetry_.state() == ServerTelemetryState::Live ||
+       telemetry_.state() == ServerTelemetryState::Degraded) &&
+      std::isfinite(telemetry_.snapshot().cpuPercent) &&
+      telemetry_.snapshot().cpuPercent >= 0.0F) {
+    serverCpuPercent_ = static_cast<int16_t>(
+        std::min(100.0F, telemetry_.snapshot().cpuPercent + 0.5F));
+  }
+  cpuUsagePercent_ = local.cpuPercent;
   gpuUsagePercent_ = currentGpuPercent();
-  if (cpuUsagePercent_ >= 0) {
-    snprintf(value, sizeof(value), "%d%%", cpuUsagePercent_);
-    setStatValue(Stat::Cpu, value);
+  if (serverCpuPercent_ >= 0) {
+    snprintf(value, sizeof(value), "%d%%", serverCpuPercent_);
+    setStatValue(Stat::ServerCpu, value);
   } else {
-    setStatValue(Stat::Cpu, "--");
+    setStatValue(Stat::ServerCpu, "--");
+  }
+  if (local.cpuPercent >= 0) {
+    snprintf(value, sizeof(value), "%d%%", local.cpuPercent);
+    setStatValue(Stat::EspCpu, value);
+  } else {
+    setStatValue(Stat::EspCpu, "--");
   }
   if (gpuUsagePercent_ >= 0) {
     snprintf(value, sizeof(value), "%d%%", gpuUsagePercent_);
@@ -473,16 +470,28 @@ void UiController::refreshStats() {
   }
   if (serverReady && server.gpuAvailable && server.gpuVramTotalBytes > 0) {
     snprintf(value, sizeof(value), "%lu/%lu MB",
-             static_cast<unsigned long>(server.gpuVramUsedBytes / 1048576ULL),
-             static_cast<unsigned long>(server.gpuVramTotalBytes / 1048576ULL));
+             static_cast<unsigned long>(server.gpuVramUsedBytes /
+                                        kBytesPerMegabyte),
+             static_cast<unsigned long>(server.gpuVramTotalBytes /
+                                        kBytesPerMegabyte));
     setStatValue(Stat::GpuVram, value);
   } else {
     setStatValue(Stat::GpuVram, "--");
   }
-  formatUptime(millis() / 1000, value, sizeof(value));
+  if (local.storageMounted && local.storageQuotaBytes > 0) {
+    snprintf(value, sizeof(value), "%lu/%lu MB",
+             static_cast<unsigned long>(local.storageAvailableBytes /
+                                        kBytesPerMegabyte),
+             static_cast<unsigned long>(local.storageQuotaBytes /
+                                        kBytesPerMegabyte));
+    setStatValue(Stat::Storage, value);
+  } else {
+    setStatValue(Stat::Storage, "--");
+  }
+  formatUptime(local.uptimeSeconds, value, sizeof(value));
   setStatValue(Stat::Uptime, value);
   snprintf(value, sizeof(value), "%.1f MB",
-           static_cast<double>(ESP.getFreeHeap()) / 1024.0);
+           static_cast<double>(ESP.getFreeHeap()) / kBytesPerMegabyte);
   setStatValue(Stat::MemoryFree, value);
   const float temperature = temperatureRead();
   if (std::isfinite(temperature)) {
@@ -507,7 +516,7 @@ void UiController::refreshChart() {
     gpuChartSeeded_ = true;
   }
 
-  setMetricLabel(cpuLegend_, "CPU", cpuUsagePercent_);
+  setMetricLabel(cpuLegend_, "ESP", cpuUsagePercent_);
   setMetricLabel(gpuLegend_, "GPU", gpuUsagePercent_);
   if ((!cpuChartSeeded_ && !gpuChartSeeded_) ||
       millis() - lastChartAt_ < kChartPeriodMs) {
@@ -545,82 +554,6 @@ void UiController::refreshWifiSheet() {
     renderedScanInProgress_ = scanning;
     renderedNetworkCount_ = wifi_.networkCount();
   }
-}
-
-bool UiController::registerCpuHooks() {
-  for (uint8_t core = 0; core < kCpuCoreCount; ++core) {
-    if (esp_register_freertos_idle_hook_for_cpu(recordIdleTick, core) !=
-        ESP_OK) {
-      for (uint8_t registered = 0; registered < core; ++registered) {
-        esp_deregister_freertos_idle_hook_for_cpu(recordIdleTick, registered);
-        esp_deregister_freertos_tick_hook_for_cpu(recordCpuTick, registered);
-      }
-      logger_.write(LogLevel::Warning, "CPU hooks unavailable");
-      return false;
-    }
-    if (esp_register_freertos_tick_hook_for_cpu(recordCpuTick, core) !=
-        ESP_OK) {
-      esp_deregister_freertos_idle_hook_for_cpu(recordIdleTick, core);
-      for (uint8_t registered = 0; registered < core; ++registered) {
-        esp_deregister_freertos_idle_hook_for_cpu(recordIdleTick, registered);
-        esp_deregister_freertos_tick_hook_for_cpu(recordCpuTick, registered);
-      }
-      logger_.write(LogLevel::Warning, "CPU tick hooks unavailable");
-      return false;
-    }
-  }
-  return true;
-}
-
-void UiController::sampleCpuUsage() {
-  if (!cpuHooksReady_) {
-    localCpuUsagePercent_ = kMetricUnavailable;
-    lastCpuSampleAt_ = millis();
-    return;
-  }
-  const uint32_t now = millis();
-  if (!cpuSampleReady_) {
-    for (uint8_t core = 0; core < kCpuCoreCount; ++core) {
-      lastIdleTickCount_[core] = gIdleTickCounts[core];
-      lastCpuTickCount_[core] = gCpuTickCounts[core];
-    }
-    lastCpuSampleAt_ = now;
-    cpuSampleReady_ = true;
-    return;
-  }
-
-  (void)now;
-  uint32_t totalTicks = 0;
-  uint32_t idleTicks = 0;
-  for (uint8_t core = 0; core < kCpuCoreCount; ++core) {
-    totalTicks += gCpuTickCounts[core] - lastCpuTickCount_[core];
-    idleTicks += gIdleTickCounts[core] - lastIdleTickCount_[core];
-    lastCpuTickCount_[core] = gCpuTickCounts[core];
-    lastIdleTickCount_[core] = gIdleTickCounts[core];
-  }
-  lastCpuSampleAt_ = now;
-  if (totalTicks == 0) {
-    return;
-  }
-  if (idleTicks > totalTicks) {
-    idleTicks = totalTicks;
-  }
-  const uint32_t busyTicks = totalTicks - idleTicks;
-  localCpuUsagePercent_ = static_cast<int16_t>((busyTicks * 100) / totalTicks);
-  if (localCpuUsagePercent_ > 100) {
-    localCpuUsagePercent_ = 100;
-  }
-}
-
-int16_t UiController::currentCpuPercent() const {
-  const ServerTelemetrySnapshot& server = telemetry_.snapshot();
-  const bool serverReady = telemetry_.state() == ServerTelemetryState::Live ||
-                           telemetry_.state() == ServerTelemetryState::Degraded;
-  if (serverReady && std::isfinite(server.cpuPercent) &&
-      server.cpuPercent >= 0.0F) {
-    return static_cast<int16_t>(std::min(100.0F, server.cpuPercent + 0.5F));
-  }
-  return localCpuUsagePercent_;
 }
 
 int16_t UiController::currentGpuPercent() const {

@@ -4,10 +4,12 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import json
+import time
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi.responses import StreamingResponse
 
 from .config import Settings
 from .device_hello import DeviceHello
@@ -17,6 +19,25 @@ from .protocol import envelope, utc_now
 from .registration_request import RegistrationRequest
 from .registration_response import RegistrationResponse
 from .store import HubStore
+from .telemetry_stream import STREAM_CONTENT_TYPE, STREAM_VERSION, encode_server_item
+
+
+class _TelemetrySnapshotCache:
+    """Share one host/GPU collection between all telemetry clients."""
+
+    def __init__(self, config: Settings, metrics: HostMetricsCollector) -> None:
+        self.config = config
+        self.metrics = metrics
+        self.payload: dict[str, Any] | None = None
+        self.collected_at = 0.0
+
+    def current(self) -> dict[str, Any]:
+        now = time.monotonic()
+        interval = max(self.config.telemetry_interval_seconds, 0.1)
+        if self.payload is None or now - self.collected_at >= interval:
+            self.payload = _health_payload(self.config, self.metrics)
+            self.collected_at = now
+        return self.payload
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -29,6 +50,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         config.metrics_interface,
         config.metrics_gpu_library,
     )
+    telemetry_cache = _TelemetrySnapshotCache(config, metrics)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -64,12 +86,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
-        return _telemetry_response(config, metrics)
+        return _telemetry_response(config, telemetry_cache)
 
     @app.get("/v1/telemetry", response_model=HealthResponse)
     async def telemetry() -> HealthResponse:
         """Return one current host and GPU telemetry snapshot."""
-        return _telemetry_response(config, metrics)
+        return _telemetry_response(config, telemetry_cache)
+
+    @app.get("/v1/telemetry/stream")
+    async def telemetry_stream() -> StreamingResponse:
+        """Stream fixed-width server items until the device disconnects."""
+        return StreamingResponse(
+            _telemetry_items(config, telemetry_cache),
+            media_type=STREAM_CONTENT_TYPE,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Nova-Telemetry-Version": str(STREAM_VERSION),
+            },
+        )
 
     @app.websocket("/v1/ws")
     async def websocket_session(websocket: WebSocket) -> None:
@@ -89,7 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             )
             await _stream_health(
-                websocket, metrics, config.protocol_version, config
+                websocket, config.protocol_version, config, telemetry_cache
             )
         except WebSocketDisconnect:
             return
@@ -97,6 +131,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await websocket.close(code=status.WS_1002_PROTOCOL_ERROR, reason="invalid message")
 
     return app
+
+
+async def _telemetry_items(
+    config: Settings, telemetry_cache: _TelemetrySnapshotCache
+) -> AsyncIterator[bytes]:
+    sequence = 0
+    while True:
+        now = utc_now()
+        yield encode_server_item(
+            sequence,
+            telemetry_cache.current(),
+            int(now.timestamp()),
+        )
+        sequence = (sequence + 1) & 0xFFFFFFFF
+        await asyncio.sleep(config.telemetry_interval_seconds)
 
 
 async def _receive_hello(
@@ -113,13 +162,17 @@ async def _receive_hello(
 
 async def _stream_health(
     websocket: WebSocket,
-    metrics: HostMetricsCollector,
     protocol_version: int,
     config: Settings,
+    telemetry_cache: _TelemetrySnapshotCache,
 ) -> None:
     while True:
         await websocket.send_json(
-            envelope(protocol_version, "health.snapshot", _health_payload(config, metrics))
+            envelope(
+                protocol_version,
+                "health.snapshot",
+                telemetry_cache.current(),
+            )
         )
         try:
             raw = await asyncio.wait_for(websocket.receive_text(), timeout=5)
@@ -170,13 +223,13 @@ def _health_payload(
 
 
 def _telemetry_response(
-    config: Settings, metrics: HostMetricsCollector
+    config: Settings, telemetry_cache: _TelemetrySnapshotCache
 ) -> HealthResponse:
     return HealthResponse(
         protocol_version=config.protocol_version,
         server_version=config.hub_version,
         server_time=utc_now(),
-        payload=_health_payload(config, metrics),
+        payload=telemetry_cache.current(),
     )
 
 

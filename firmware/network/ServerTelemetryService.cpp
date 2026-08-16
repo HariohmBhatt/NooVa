@@ -1,9 +1,6 @@
 #include "ServerTelemetryService.h"
 
-#include <ArduinoJson.h>
-#include <HTTPClient.h>
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
 
 #include <cstdio>
 #include <cstring>
@@ -15,8 +12,7 @@ namespace {
 
 constexpr char kHubHost[] = "nova-hub.local";
 constexpr uint16_t kHubPort = 443;
-constexpr char kTelemetryPath[] = "/v1/telemetry";
-constexpr int16_t kMetricUnavailable = -1;
+constexpr char kTelemetryPath[] = "/v1/telemetry/stream";
 
 }  // namespace
 
@@ -26,10 +22,11 @@ ServerTelemetryService::ServerTelemetryService(Logger& logger, WifiService& wifi
 bool ServerTelemetryService::begin() {
   if (kHubRootCa[0] == '\0') {
     setError("hub CA trust anchor missing");
-    return true;
+    return false;
   }
-  ready_ = true;
+  tls_.setCACert(kHubRootCa);
   state_ = ServerTelemetryState::Offline;
+  ready_ = true;
   return true;
 }
 
@@ -38,23 +35,35 @@ void ServerTelemetryService::update() {
     return;
   }
   if (wifi_.state() != WifiState::Connected) {
+    closeStream();
     state_ = ServerTelemetryState::Offline;
     return;
   }
 
   const uint32_t now = millis();
-  if (lastPollAt_ != 0 && now - lastPollAt_ < kPollPeriodMs) {
-    if (snapshot_.valid && now - snapshot_.receivedAtMs >= kStaleAfterMs) {
-      state_ = ServerTelemetryState::Stale;
+  if (!streamOpen_) {
+    if (lastConnectAttemptAt_ != 0 &&
+        now - lastConnectAttemptAt_ < kReconnectPeriodMs) {
+      return;
     }
-    return;
+    lastConnectAttemptAt_ = now;
+    if (!openStream()) {
+      return;
+    }
   }
-  lastPollAt_ = now;
-  fetch(now);
+
+  pumpStream(now);
+  if (snapshot_.valid && now - lastFrameAt_ >= kStaleAfterMs) {
+    state_ = ServerTelemetryState::Stale;
+  }
 }
 
 const ServerTelemetrySnapshot& ServerTelemetryService::snapshot() const {
   return snapshot_;
+}
+
+const TelemetryItem& ServerTelemetryService::latestItem() const {
+  return latestItem_;
 }
 
 ServerTelemetryState ServerTelemetryService::state() const { return state_; }
@@ -77,81 +86,130 @@ const char* ServerTelemetryService::stateName() const {
   return "UNKNOWN";
 }
 
-bool ServerTelemetryService::fetch(uint32_t now) {
-  WiFiClientSecure tls;
-  tls.setCACert(kHubRootCa);
-  HTTPClient http;
+bool ServerTelemetryService::openStream() {
   char url[128] = {};
   snprintf(url, sizeof(url), "https://%s:%u%s", kHubHost, kHubPort,
            kTelemetryPath);
-  if (!http.begin(tls, url)) {
+  http_.end();
+  tls_.stop();
+  http_.setReuse(false);
+  http_.useHTTP10(true);
+  if (!http_.begin(tls_, url)) {
     setError("telemetry HTTPS setup failed");
     return false;
   }
-  http.setTimeout(kRequestTimeoutMs);
-  const int responseCode = http.GET();
+  http_.setTimeout(kRequestTimeoutMs);
+  const int responseCode = http_.GET();
   if (responseCode != HTTP_CODE_OK) {
-    http.end();
-    setError("telemetry request failed");
+    http_.end();
+    tls_.stop();
+    setError("telemetry stream request failed");
     return false;
   }
-  const bool parsed = parseResponse(http.getStream(), now);
-  http.end();
-  return parsed;
-}
-
-bool ServerTelemetryService::parseResponse(Stream& body, uint32_t now) {
-  StaticJsonDocument<4096> response;
-  const DeserializationError error = deserializeJson(response, body);
-  if (error) {
-    setError("telemetry response invalid");
-    return false;
-  }
-
-  const JsonObjectConst payload = response["payload"].as<JsonObjectConst>();
-  if (payload.isNull()) {
-    setError("telemetry payload missing");
-    return false;
-  }
-  snapshot_.cpuPercent = payload["cpu_percent"] | -1.0F;
-  snapshot_.gpuAvailable =
-      strcmp(payload["gpu_state"] | "unavailable", "available") == 0;
-  snapshot_.gpuUtilizationPercent =
-      payload["gpu_utilization_percent"] | -1.0F;
-  snapshot_.gpuTemperatureC = payload["gpu_temperature_c"] | -1.0F;
-  snapshot_.gpuVramUsedBytes = payload["gpu_vram_used_bytes"] | 0ULL;
-  snapshot_.gpuVramTotalBytes = payload["gpu_vram_total_bytes"] | 0ULL;
-  copyText(snapshot_.gpuName, sizeof(snapshot_.gpuName),
-           payload["gpu_name"] | "");
-  copyText(snapshot_.dependencyStatus, sizeof(snapshot_.dependencyStatus),
-           payload["dependency_status"] | "degraded");
-  snapshot_.valid = true;
-  snapshot_.receivedAtMs = now;
-  snapshot_.error[0] = '\0';
-  state_ = strcmp(snapshot_.dependencyStatus, "healthy") == 0
-               ? ServerTelemetryState::Live
-               : ServerTelemetryState::Degraded;
-  logger_.writef(LogLevel::Debug,
-                 "Server telemetry CPU=%.1f GPU=%.1f%% GPU temp=%.1f C",
-                 snapshot_.cpuPercent, snapshot_.gpuUtilizationPercent,
-                 snapshot_.gpuTemperatureC);
+  frameBytes_ = 0;
+  streamOpen_ = true;
   return true;
 }
 
+void ServerTelemetryService::closeStream() {
+  if (!streamOpen_ && !http_.connected()) {
+    frameBytes_ = 0;
+    return;
+  }
+  http_.end();
+  tls_.stop();
+  frameBytes_ = 0;
+  streamOpen_ = false;
+}
+
+void ServerTelemetryService::pumpStream(uint32_t now) {
+  if (!http_.connected()) {
+    closeStream();
+    setError("telemetry stream disconnected");
+    return;
+  }
+
+  Stream& body = http_.getStream();
+  size_t bytesRead = 0;
+  while (body.available() > 0 && bytesRead < kMaxBytesPerUpdate) {
+    const int value = body.read();
+    if (value < 0) {
+      break;
+    }
+    frameBuffer_[frameBytes_++] = static_cast<uint8_t>(value);
+    ++bytesRead;
+    if (frameBytes_ < sizeof(kTelemetryMagic)) {
+      continue;
+    }
+    if (memcmp(frameBuffer_, kTelemetryMagic, sizeof(kTelemetryMagic)) != 0) {
+      discardLeadingByte();
+      continue;
+    }
+    if (frameBytes_ < kTelemetryFrameSize) {
+      continue;
+    }
+
+    TelemetryItem item = {};
+    memcpy(&item, frameBuffer_, sizeof(item));
+    if (isValidTelemetryItem(item) && item.kind == kServerTelemetryItemKind) {
+      processFrame(item, now);
+      frameBytes_ = 0;
+    } else {
+      discardLeadingByte();
+    }
+  }
+
+  if (!http_.connected() && body.available() == 0) {
+    closeStream();
+    setError("telemetry stream ended");
+  }
+}
+
+void ServerTelemetryService::processFrame(const TelemetryItem& item,
+                                           uint32_t now) {
+  latestItem_ = item;
+  snapshot_.valid = true;
+  snapshot_.gpuAvailable = (item.flags & kTelemetryGpuAvailableFlag) != 0;
+  snapshot_.cpuPercent = item.cpuTenths < 0 ? -1.0F : item.cpuTenths / 10.0F;
+  snapshot_.gpuUtilizationPercent =
+      item.gpuUtilizationTenths < 0 ? -1.0F
+                                    : item.gpuUtilizationTenths / 10.0F;
+  snapshot_.gpuTemperatureC =
+      item.gpuTemperatureTenths < 0 ? -1.0F
+                                    : item.gpuTemperatureTenths / 10.0F;
+  snapshot_.gpuVramUsedBytes = item.metricA;
+  snapshot_.gpuVramTotalBytes = item.metricB;
+  snapshot_.uptimeSeconds = item.uptimeSeconds;
+  snapshot_.errorCount = item.errorCount;
+  snapshot_.sequence = item.sequence;
+  snapshot_.timestampSeconds = item.timestampSeconds;
+  snapshot_.receivedAtMs = now;
+  snapshot_.gpuName[0] = '\0';
+  snprintf(snapshot_.dependencyStatus, sizeof(snapshot_.dependencyStatus),
+           "%s", (item.flags & kTelemetryDegradedFlag) ? "degraded"
+                                                         : "healthy");
+  snapshot_.error[0] = '\0';
+  lastFrameAt_ = now;
+  state_ = (item.flags & kTelemetryDegradedFlag)
+               ? ServerTelemetryState::Degraded
+               : ServerTelemetryState::Live;
+}
+
+void ServerTelemetryService::discardLeadingByte() {
+  if (frameBytes_ == 0) {
+    return;
+  }
+  memmove(frameBuffer_, frameBuffer_ + 1, frameBytes_ - 1);
+  --frameBytes_;
+}
+
 void ServerTelemetryService::setError(const char* message) {
-  copyText(snapshot_.error, sizeof(snapshot_.error), message);
+  snprintf(snapshot_.error, sizeof(snapshot_.error), "%s",
+           message == nullptr ? "telemetry stream error" : message);
   state_ = snapshot_.valid ? ServerTelemetryState::Stale
                            : ServerTelemetryState::Error;
   logger_.writef(LogLevel::Warning, "Telemetry: %s",
-                 message == nullptr ? "request error" : message);
-}
-
-void ServerTelemetryService::copyText(char* destination, size_t capacity,
-                                      const char* source) {
-  if (destination == nullptr || capacity == 0) {
-    return;
-  }
-  snprintf(destination, capacity, "%s", source == nullptr ? "" : source);
+                 message == nullptr ? "telemetry stream error" : message);
 }
 
 }  // namespace nova

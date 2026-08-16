@@ -10,6 +10,7 @@
 #include "../hardware/BoardPins.h"
 #include "../hardware/BoardTouch.h"
 #include "../network/ServerTelemetryService.h"
+#include "../telemetry/EspHealthService.h"
 #include "../network/WifiService.h"
 
 namespace nova {
@@ -18,14 +19,14 @@ namespace nova {
  * Owns the single device-status view and its transient Wi-Fi setup sheet.
  *
  * The hub supplies server CPU/GPU telemetry while board-local services supply
- * connectivity, memory, temperature, and uptime. A tick-based local CPU
- * estimate is retained only as a clearly defined offline fallback.
+ * connectivity, ESP CPU, storage, memory, temperature, and uptime.
  */
 class UiController {
  public:
   /** Connect LVGL to board services and build the device status screen. */
   UiController(BoardDisplay& display, BoardTouch& touch, Logger& logger,
-               WifiService& wifi, ServerTelemetryService& telemetry);
+               WifiService& wifi, ServerTelemetryService& telemetry,
+               EspHealthService& espHealth);
 
   /** Initialize LVGL and create the dashboard and Wi-Fi setup sheet. */
   bool begin();
@@ -45,10 +46,12 @@ class UiController {
   enum class Stat : uint8_t {
     Wifi,
     IpAddress,
-    Cpu,
+    ServerCpu,
+    EspCpu,
     Gpu,
     GpuTemperature,
     GpuVram,
+    Storage,
     Uptime,
     MemoryFree,
     Temperature,
@@ -56,12 +59,12 @@ class UiController {
   };
 
   static constexpr uint8_t kBufferLines = 40;
-  static constexpr uint8_t kCpuCoreCount = 2;
   static constexpr uint32_t kRefreshPeriodMs = 500;
   static constexpr uint32_t kChartPeriodMs = 60000;
   static constexpr size_t kChartPointCount = 11;
   static constexpr size_t kStatCount = static_cast<size_t>(Stat::Count);
   static constexpr int16_t kMetricUnavailable = -1;
+  static constexpr uint32_t kBytesPerMegabyte = 1024U * 1024U;
 
   static void flushDisplay(lv_disp_drv_t* driver, const lv_area_t* area,
                            lv_color_t* color);
@@ -80,9 +83,6 @@ class UiController {
   void refreshStats();
   void refreshChart();
   void refreshWifiSheet();
-  bool registerCpuHooks();
-  void sampleCpuUsage();
-  int16_t currentCpuPercent() const;
   int16_t currentGpuPercent() const;
   void setStatValue(Stat stat, const char* value);
   void showWifiSheet();
@@ -97,6 +97,7 @@ class UiController {
   Logger& logger_;
   WifiService& wifi_;
   ServerTelemetryService& telemetry_;
+  EspHealthService& espHealth_;
   lv_disp_draw_buf_t drawBuffer_ = {};
   lv_disp_drv_t displayDriver_ = {};
   lv_indev_drv_t inputDriver_ = {};
@@ -121,18 +122,14 @@ class UiController {
 
   int16_t cpuHistory_[kChartPointCount] = {};
   int16_t gpuHistory_[kChartPointCount] = {};
-  uint32_t lastIdleTickCount_[kCpuCoreCount] = {};
-  uint32_t lastCpuTickCount_[kCpuCoreCount] = {};
-  uint32_t lastCpuSampleAt_ = 0;
   uint32_t lastRefreshAt_ = 0;
+  uint32_t lastDashboardAt_ = 0;
   uint32_t lastChartAt_ = 0;
-  int16_t localCpuUsagePercent_ = kMetricUnavailable;
+  int16_t serverCpuPercent_ = kMetricUnavailable;
   int16_t cpuUsagePercent_ = kMetricUnavailable;
   int16_t gpuUsagePercent_ = kMetricUnavailable;
   size_t selectedNetworkIndex_ = WifiService::kMaxNetworks;
   size_t renderedNetworkCount_ = WifiService::kMaxNetworks;
-  bool cpuSampleReady_ = false;
-  bool cpuHooksReady_ = false;
   bool cpuChartSeeded_ = false;
   bool gpuChartSeeded_ = false;
   bool wifiListDirty_ = true;
