@@ -1,0 +1,18 @@
+{
+    auto_https disable_redirects
+    admin off
+}
+
+(nova_proxy) {
+    tls internal
+    encode zstd gzip
+    reverse_proxy hub-api:8000
+}
+
+https://nova-hub.local {
+    import nova_proxy
+}
+
+https://192.168.29.225 {
+    import nova_proxy
+}

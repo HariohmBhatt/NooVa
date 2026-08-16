@@ -7,6 +7,7 @@
 #include "network/SshService.h"
 #include "network/WifiService.h"
 #include "network/OtaService.h"
+#include "network/ServerTelemetryService.h"
 #include "ui/UiController.h"
 
 namespace {
@@ -19,9 +20,10 @@ nova::ButtonService gButtons(gLogger);
 nova::BoardDisplay gDisplay;
 nova::BoardTouch gTouch;
 nova::WifiService gWifi(gLogger);
+nova::ServerTelemetryService gTelemetry(gLogger, gWifi);
 nova::SshService gSsh(gLogger, gWifi);
 nova::OtaService gOta(gLogger, gWifi, gSsh);
-nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi);
+nova::UiController gUi(gDisplay, gTouch, gLogger, gWifi, gTelemetry);
 bool gRemoteServicesPaused = false;
 
 void pauseAppliance() {
@@ -64,6 +66,10 @@ void setup() {
   if (!gWifi.begin()) {
     gLogger.write(nova::LogLevel::Error, "Wi-Fi service initialization failed");
   }
+  if (!gTelemetry.begin()) {
+    gLogger.write(nova::LogLevel::Error,
+                  "Server telemetry initialization failed");
+  }
   if (!gSsh.begin()) {
     gLogger.write(nova::LogLevel::Error, "SSH service initialization failed");
   }
@@ -83,6 +89,7 @@ void loop() {
     pauseAppliance();
   }
   gWifi.update();
+  gTelemetry.update();
   gSsh.update();
   gOta.update();
   gUi.update();

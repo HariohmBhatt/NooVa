@@ -9,6 +9,7 @@
 #include "../hardware/BoardDisplay.h"
 #include "../hardware/BoardPins.h"
 #include "../hardware/BoardTouch.h"
+#include "../network/ServerTelemetryService.h"
 #include "../network/WifiService.h"
 
 namespace nova {
@@ -16,15 +17,15 @@ namespace nova {
 /**
  * Owns the single device-status view and its transient Wi-Fi setup sheet.
  *
- * Local services provide Wi-Fi, memory, temperature, uptime, and CPU data.
- * GPU values stay unavailable until a server telemetry transport is defined;
- * the UI never fabricates a remote metric.
+ * The hub supplies server CPU/GPU telemetry while board-local services supply
+ * connectivity, memory, temperature, and uptime. A tick-based local CPU
+ * estimate is retained only as a clearly defined offline fallback.
  */
 class UiController {
  public:
   /** Connect LVGL to board services and build the device status screen. */
   UiController(BoardDisplay& display, BoardTouch& touch, Logger& logger,
-               WifiService& wifi);
+               WifiService& wifi, ServerTelemetryService& telemetry);
 
   /** Initialize LVGL and create the dashboard and Wi-Fi setup sheet. */
   bool begin();
@@ -46,10 +47,11 @@ class UiController {
     IpAddress,
     Cpu,
     Gpu,
+    GpuTemperature,
+    GpuVram,
     Uptime,
     MemoryFree,
     Temperature,
-    Firmware,
     Count,
   };
 
@@ -78,8 +80,10 @@ class UiController {
   void refreshStats();
   void refreshChart();
   void refreshWifiSheet();
-  bool registerIdleHooks();
+  bool registerCpuHooks();
   void sampleCpuUsage();
+  int16_t currentCpuPercent() const;
+  int16_t currentGpuPercent() const;
   void setStatValue(Stat stat, const char* value);
   void showWifiSheet();
   void hideWifiSheet();
@@ -92,6 +96,7 @@ class UiController {
   BoardTouch& touch_;
   Logger& logger_;
   WifiService& wifi_;
+  ServerTelemetryService& telemetry_;
   lv_disp_draw_buf_t drawBuffer_ = {};
   lv_disp_drv_t displayDriver_ = {};
   lv_indev_drv_t inputDriver_ = {};
@@ -117,15 +122,19 @@ class UiController {
   int16_t cpuHistory_[kChartPointCount] = {};
   int16_t gpuHistory_[kChartPointCount] = {};
   uint32_t lastIdleTickCount_[kCpuCoreCount] = {};
+  uint32_t lastCpuTickCount_[kCpuCoreCount] = {};
   uint32_t lastCpuSampleAt_ = 0;
   uint32_t lastRefreshAt_ = 0;
   uint32_t lastChartAt_ = 0;
+  int16_t localCpuUsagePercent_ = kMetricUnavailable;
   int16_t cpuUsagePercent_ = kMetricUnavailable;
+  int16_t gpuUsagePercent_ = kMetricUnavailable;
   size_t selectedNetworkIndex_ = WifiService::kMaxNetworks;
   size_t renderedNetworkCount_ = WifiService::kMaxNetworks;
   bool cpuSampleReady_ = false;
-  bool idleHooksReady_ = false;
-  bool chartSeeded_ = false;
+  bool cpuHooksReady_ = false;
+  bool cpuChartSeeded_ = false;
+  bool gpuChartSeeded_ = false;
   bool wifiListDirty_ = true;
   bool renderedScanInProgress_ = false;
   View view_ = View::Dashboard;
