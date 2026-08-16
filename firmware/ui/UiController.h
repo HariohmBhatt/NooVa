@@ -16,56 +16,54 @@ namespace nova {
 
 class UiController {
  public:
-  /** Connect LVGL to board services and build the application UI. */
+  /** Connect LVGL to board services and build the device status screen. */
   UiController(BoardDisplay& display, BoardTouch& touch, Logger& logger,
                WifiService& wifi, SshService& ssh);
 
-  /** Initialize LVGL and create the offline-capable application screens. */
+  /** Initialize LVGL and create the dashboard and Wi-Fi setup sheet. */
   bool begin();
 
-  /** Advance LVGL and refresh the visible diagnostic information. */
+  /** Advance LVGL and refresh the visible device statistics. */
   void update();
 
   /** Return whether the UI has been initialized successfully. */
   bool isReady() const;
 
  private:
-  enum class Page : uint8_t {
-    Home,
-    Diagnostics,
-    Wifi,
-    Ssh,
-    Logs,
+  enum class View : uint8_t {
+    Dashboard,
+    WifiSetup,
   };
 
   static constexpr uint8_t kBufferLines = 40;
-  static constexpr uint32_t kLogRefreshPeriodMs = 500;
-  static constexpr size_t kLogSnapshotCapacity = 64;
-  static constexpr size_t kLogTextCapacity = 64 * 112;
+  static constexpr uint8_t kCpuCoreCount = 2;
+  static constexpr uint32_t kRefreshPeriodMs = 500;
+  static constexpr uint32_t kChartPeriodMs = 5000;
+  static constexpr size_t kChartPointCount = 8;
+  static constexpr size_t kStatCount = 8;
+  static constexpr int16_t kMetricUnavailable = -1;
 
   static void flushDisplay(lv_disp_drv_t* driver, const lv_area_t* area,
                            lv_color_t* color);
   static void readTouch(lv_indev_drv_t* driver, lv_indev_data_t* data);
-  static void handleNavigation(lv_event_t* event);
+  static void handleDashboardControls(lv_event_t* event);
   static void handleWifiControls(lv_event_t* event);
   static void handleWifiKeyboard(lv_event_t* event);
-  static void handleSshControls(lv_event_t* event);
-  static void handleSshKeyboard(lv_event_t* event);
 
   void buildUi();
-  void showPage(Page page);
+  void buildDashboard();
+  void buildWifiSheet();
+  void refreshDashboard();
+  void refreshStats();
+  void refreshChart();
+  void refreshWifiSheet();
+  void sampleCpuUsage();
+  void setStatValue(size_t index, const char* value);
+  void showWifiSheet();
+  void hideWifiSheet();
   void showWifiPassword(size_t networkIndex);
   void hideWifiPassword();
-  void updateHomeView();
-  void updateDiagnosticsView();
-  void updateWifiView();
-  void updateSshView();
-  void updateLogView();
-  void preparePage(lv_obj_t* page);
-  lv_obj_t* createNavigationButton(const char* text, int16_t x);
-  const char* levelName(LogLevel level) const;
-  void showSshPassword();
-  void hideSshPassword();
+  void renderWifiNetworks();
 
   BoardDisplay& display_;
   BoardTouch& touch_;
@@ -76,36 +74,38 @@ class UiController {
   lv_disp_drv_t displayDriver_ = {};
   lv_indev_drv_t inputDriver_ = {};
   lv_color_t drawPixels_[board::kDisplayWidth * kBufferLines] = {};
-  lv_obj_t* homePage_ = nullptr;
-  lv_obj_t* diagnosticsPage_ = nullptr;
-  lv_obj_t* wifiPage_ = nullptr;
-  lv_obj_t* sshPage_ = nullptr;
-  lv_obj_t* logsPage_ = nullptr;
-  lv_obj_t* logText_ = nullptr;
-  lv_obj_t* homeStatus_ = nullptr;
-  lv_obj_t* diagnosticsStatus_ = nullptr;
+
+  lv_obj_t* telemetryChart_ = nullptr;
+  lv_chart_series_t* cpuSeries_ = nullptr;
+  lv_chart_series_t* gpuSeries_ = nullptr;
+  lv_obj_t* cpuLegend_ = nullptr;
+  lv_obj_t* gpuLegend_ = nullptr;
+  lv_obj_t* statValues_[kStatCount] = {};
+  lv_obj_t* wifiActionButton_ = nullptr;
+  lv_obj_t* wifiSheet_ = nullptr;
   lv_obj_t* wifiStatus_ = nullptr;
   lv_obj_t* wifiList_ = nullptr;
   lv_obj_t* wifiScanButton_ = nullptr;
+  lv_obj_t* wifiCloseButton_ = nullptr;
+  lv_obj_t* wifiBackButton_ = nullptr;
   lv_obj_t* wifiPassword_ = nullptr;
   lv_obj_t* wifiKeyboard_ = nullptr;
-  lv_obj_t* sshStatus_ = nullptr;
-  lv_obj_t* sshActionButton_ = nullptr;
-  lv_obj_t* sshPassword_ = nullptr;
-  lv_obj_t* sshKeyboard_ = nullptr;
-  lv_obj_t* sshInstructions_ = nullptr;
-  lv_obj_t* navigationHome_ = nullptr;
-  lv_obj_t* navigationDiagnostics_ = nullptr;
-  lv_obj_t* navigationWifi_ = nullptr;
-  lv_obj_t* navigationSsh_ = nullptr;
-  lv_obj_t* navigationLogs_ = nullptr;
   lv_obj_t* wifiNetworkButtons_[WifiService::kMaxNetworks] = {};
+
+  int16_t cpuHistory_[kChartPointCount] = {};
+  int16_t gpuHistory_[kChartPointCount] = {};
+  uint32_t lastIdleRuntime_[kCpuCoreCount] = {};
+  uint32_t lastCpuSampleAt_ = 0;
+  uint32_t lastRefreshAt_ = 0;
+  uint32_t lastChartAt_ = 0;
+  int16_t cpuUsagePercent_ = kMetricUnavailable;
   size_t selectedNetworkIndex_ = WifiService::kMaxNetworks;
-  size_t renderedNetworkCount_ = 0;
-  LogEntry logSnapshot_[kLogSnapshotCapacity] = {};
-  char logTextBuffer_[kLogTextCapacity] = {};
-  uint32_t lastTickAt_ = 0;
-  uint32_t lastLogRefreshAt_ = 0;
+  size_t renderedNetworkCount_ = WifiService::kMaxNetworks;
+  bool cpuSampleReady_ = false;
+  bool chartSeeded_ = false;
+  bool wifiListDirty_ = true;
+  bool renderedScanInProgress_ = false;
+  View view_ = View::Dashboard;
   bool ready_ = false;
 };
 

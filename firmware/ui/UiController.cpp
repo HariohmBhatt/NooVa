@@ -1,20 +1,117 @@
 #include "UiController.h"
 
+#include <Arduino.h>
+#include <freertos/task.h>
+
+#include <cmath>
 #include <cstdio>
 
 namespace nova {
 namespace {
 
-constexpr uint32_t kBackgroundColor = 0x101820;
-constexpr uint32_t kPanelColor = 0x182632;
-constexpr uint32_t kAccentColor = 0x39D98A;
-constexpr uint32_t kTextColor = 0xE7F1F5;
-constexpr uint32_t kMutedTextColor = 0x8BA3AD;
+constexpr uint32_t kBackgroundColor = 0x111A18;
+constexpr uint32_t kPanelColor = 0x192622;
+constexpr uint32_t kLineColor = 0x2C3C36;
+constexpr uint32_t kTextColor = 0xEEF5EF;
+constexpr uint32_t kMutedTextColor = 0x91A49A;
+constexpr uint32_t kFaintTextColor = 0x667B70;
+constexpr uint32_t kMintColor = 0xACE8C8;
+constexpr uint32_t kMintPressedColor = 0xC2F1D7;
+constexpr uint32_t kGoldColor = 0xE4B56D;
+constexpr uint32_t kActionTextColor = 0x102219;
+constexpr char kFirmwareVersion[] = "v0.1.0";
 
-void styleObject(lv_obj_t* object, uint32_t background, uint32_t text) {
+constexpr int16_t kMargin = 14;
+constexpr int16_t kContentWidth = 292;
+constexpr int16_t kTelemetryY = 46;
+constexpr int16_t kTelemetryHeight = 106;
+constexpr int16_t kStatsY = 160;
+constexpr int16_t kStatsHeight = 222;
+constexpr int16_t kActionY = 410;
+constexpr int16_t kActionHeight = 52;
+constexpr int16_t kStatRowHeight = 20;
+
+constexpr const char* kStatNames[] = {
+    "Wi-Fi",          "IP address", "CPU utilisation", "GPU utilisation",
+    "Uptime",         "Memory free", "Temperature",     "Firmware",
+};
+
+void styleSurface(lv_obj_t* object, uint32_t background, uint32_t text,
+                  uint32_t border, uint16_t radius) {
   lv_obj_set_style_bg_color(object, lv_color_hex(background), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(object, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_text_color(object, lv_color_hex(text), LV_PART_MAIN);
-  lv_obj_set_style_border_width(object, 0, LV_PART_MAIN);
+  lv_obj_set_style_border_color(object, lv_color_hex(border), LV_PART_MAIN);
+  lv_obj_set_style_border_width(object, border == kBackgroundColor ? 0 : 1,
+                                LV_PART_MAIN);
+  lv_obj_set_style_radius(object, radius, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(object, 0, LV_PART_MAIN);
+}
+
+void styleScreen(lv_obj_t* object) {
+  styleSurface(object, kBackgroundColor, kTextColor, kBackgroundColor, 0);
+  lv_obj_clear_flag(object, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+lv_obj_t* createLabel(lv_obj_t* parent, const char* text, int16_t x, int16_t y,
+                      int16_t width, int16_t height, uint32_t color) {
+  lv_obj_t* label = lv_label_create(parent);
+  lv_label_set_text(label, text);
+  lv_obj_set_size(label, width, height);
+  lv_obj_set_pos(label, x, y);
+  lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+  lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
+  return label;
+}
+
+lv_obj_t* createPanel(lv_obj_t* parent, int16_t x, int16_t y, int16_t width,
+                      int16_t height) {
+  lv_obj_t* panel = lv_obj_create(parent);
+  lv_obj_set_size(panel, width, height);
+  lv_obj_set_pos(panel, x, y);
+  styleSurface(panel, kPanelColor, kTextColor, kLineColor, 14);
+  lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+  return panel;
+}
+
+lv_obj_t* createButton(lv_obj_t* parent, const char* text, int16_t x,
+                       int16_t y, int16_t width, int16_t height,
+                       uint32_t background, uint32_t foreground) {
+  lv_obj_t* button = lv_btn_create(parent);
+  lv_obj_set_size(button, width, height);
+  lv_obj_set_pos(button, x, y);
+  styleSurface(button, background, foreground, background, 11);
+  if (background == kMintColor) {
+    lv_obj_set_style_bg_color(button, lv_color_hex(kMintPressedColor),
+                              LV_PART_MAIN | LV_STATE_PRESSED);
+  }
+  lv_obj_t* label = createLabel(button, text, 8, 0, width - 16, height,
+                                foreground);
+  lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+  return button;
+}
+
+void setMetricLabel(lv_obj_t* label, const char* name, int16_t value) {
+  if (label == nullptr) {
+    return;
+  }
+  char text[24] = {};
+  if (value < 0) {
+    snprintf(text, sizeof(text), "%s --", name);
+  } else {
+    snprintf(text, sizeof(text), "%s %d%%", name, value);
+  }
+  lv_label_set_text(label, text);
+}
+
+void formatUptime(uint32_t uptimeSeconds, char* output, size_t capacity) {
+  const uint32_t hours = uptimeSeconds / 3600;
+  const uint32_t minutes = (uptimeSeconds % 3600) / 60;
+  const uint32_t seconds = uptimeSeconds % 60;
+  snprintf(output, capacity, "%02lu:%02lu:%02lu",
+           static_cast<unsigned long>(hours),
+           static_cast<unsigned long>(minutes),
+           static_cast<unsigned long>(seconds));
 }
 
 }  // namespace
@@ -50,9 +147,10 @@ bool UiController::begin() {
   lv_indev_drv_register(&inputDriver_);
 
   buildUi();
-  lastTickAt_ = millis();
+  lastRefreshAt_ = millis();
+  lastChartAt_ = millis();
   ready_ = true;
-  logger_.write(LogLevel::Info, "Offline UI initialized");
+  logger_.write(LogLevel::Info, "Device status UI initialized");
   return true;
 }
 
@@ -62,15 +160,11 @@ void UiController::update() {
   }
 
   const uint32_t now = millis();
-  lv_tick_inc(now - lastTickAt_);
-  lastTickAt_ = now;
-  if (now - lastLogRefreshAt_ >= kLogRefreshPeriodMs) {
-    lastLogRefreshAt_ = now;
-    updateHomeView();
-    updateDiagnosticsView();
-    updateWifiView();
-    updateSshView();
-    updateLogView();
+  lv_tick_inc(now - lastRefreshAt_);
+  lastRefreshAt_ = now;
+  if (now - lastCpuSampleAt_ >= kRefreshPeriodMs) {
+    refreshDashboard();
+    refreshWifiSheet();
   }
   lv_timer_handler();
 }
@@ -106,59 +200,11 @@ void UiController::readTouch(lv_indev_drv_t* driver, lv_indev_data_t* data) {
   data->point.y = point.y;
 }
 
-void UiController::handleNavigation(lv_event_t* event) {
+void UiController::handleDashboardControls(lv_event_t* event) {
   auto* controller = static_cast<UiController*>(lv_event_get_user_data(event));
-  if (controller == nullptr) {
-    return;
-  }
-
-  lv_obj_t* target = lv_event_get_target(event);
-  if (target == controller->navigationHome_) {
-    controller->showPage(Page::Home);
-  } else if (target == controller->navigationDiagnostics_) {
-    controller->showPage(Page::Diagnostics);
-  } else if (target == controller->navigationWifi_) {
-    controller->showPage(Page::Wifi);
-  } else if (target == controller->navigationSsh_) {
-    controller->showPage(Page::Ssh);
-  } else if (target == controller->navigationLogs_) {
-    controller->showPage(Page::Logs);
-  }
-}
-
-void UiController::handleSshControls(lv_event_t* event) {
-  auto* controller = static_cast<UiController*>(lv_event_get_user_data(event));
-  if (controller == nullptr || lv_event_get_target(event) !=
-                                  controller->sshActionButton_) {
-    return;
-  }
-
-  if (controller->ssh_.isEnabled()) {
-    controller->ssh_.setEnabled(false);
-  } else if (controller->ssh_.hasCredentials()) {
-    controller->ssh_.setEnabled(true);
-  } else {
-    controller->showSshPassword();
-  }
-  controller->updateSshView();
-}
-
-void UiController::handleSshKeyboard(lv_event_t* event) {
-  auto* controller = static_cast<UiController*>(lv_event_get_user_data(event));
-  if (controller == nullptr) {
-    return;
-  }
-
-  const lv_event_code_t code = lv_event_get_code(event);
-  if (code == LV_EVENT_CANCEL) {
-    controller->hideSshPassword();
-  } else if (code == LV_EVENT_READY) {
-    if (controller->ssh_.configure("nova",
-                                   lv_textarea_get_text(controller->sshPassword_),
-                                   true)) {
-      controller->ssh_.setEnabled(true);
-    }
-    controller->hideSshPassword();
+  if (controller != nullptr &&
+      lv_event_get_target(event) == controller->wifiActionButton_) {
+    controller->showWifiSheet();
   }
 }
 
@@ -169,11 +215,19 @@ void UiController::handleWifiControls(lv_event_t* event) {
   }
 
   lv_obj_t* target = lv_event_get_target(event);
-  if (target == controller->wifiScanButton_) {
-    controller->wifi_.startScan();
+  if (target == controller->wifiCloseButton_) {
+    controller->hideWifiSheet();
     return;
   }
-
+  if (target == controller->wifiScanButton_) {
+    controller->wifi_.startScan();
+    controller->wifiListDirty_ = true;
+    return;
+  }
+  if (target == controller->wifiBackButton_) {
+    controller->hideWifiPassword();
+    return;
+  }
   for (size_t index = 0; index < WifiService::kMaxNetworks; ++index) {
     if (target == controller->wifiNetworkButtons_[index]) {
       controller->showWifiPassword(index);
@@ -204,397 +258,359 @@ void UiController::handleWifiKeyboard(lv_event_t* event) {
                                lv_textarea_get_text(controller->wifiPassword_),
                                true);
   }
-  controller->hideWifiPassword();
+  controller->hideWifiSheet();
 }
 
 void UiController::buildUi() {
+  styleScreen(lv_scr_act());
+  buildDashboard();
+  buildWifiSheet();
+}
+
+void UiController::buildDashboard() {
   lv_obj_t* screen = lv_scr_act();
-  styleObject(screen, kBackgroundColor, kTextColor);
+  lv_obj_t* mark = lv_obj_create(screen);
+  lv_obj_set_size(mark, 12, 12);
+  lv_obj_set_pos(mark, 16, 15);
+  styleSurface(mark, kBackgroundColor, kMintColor, kMintColor, 4);
+  lv_obj_set_style_border_width(mark, 2, LV_PART_MAIN);
 
-  lv_obj_t* title = lv_label_create(screen);
-  lv_label_set_text(title, "NOVA  /  SYSTEM");
-  lv_obj_set_pos(title, 12, 10);
-  lv_obj_set_style_text_color(title, lv_color_hex(kAccentColor), LV_PART_MAIN);
+  lv_obj_t* wordmark = createLabel(screen, "NOVA", 36, 8, 100, 26, kTextColor);
+  lv_obj_set_style_text_letter_space(wordmark, 2, LV_PART_MAIN);
+  createLabel(screen, "DEVICE STATUS", 194, 13, 110, 20, kFaintTextColor);
 
-  lv_obj_t* subtitle = lv_label_create(screen);
-  lv_label_set_text(subtitle, "ESP32-S3 appliance");
-  lv_obj_set_pos(subtitle, 12, 28);
-  lv_obj_set_style_text_color(subtitle, lv_color_hex(kMutedTextColor),
+  lv_obj_t* telemetry =
+      createPanel(screen, kMargin, kTelemetryY, kContentWidth, kTelemetryHeight);
+  createLabel(telemetry, "Utilisation", 12, 8, 100, 20, kTextColor);
+  createLabel(telemetry, "10 MIN", 246, 10, 34, 16, kFaintTextColor);
+  telemetryChart_ = lv_chart_create(telemetry);
+  lv_obj_set_size(telemetryChart_, 268, 54);
+  lv_obj_set_pos(telemetryChart_, 12, 30);
+  styleSurface(telemetryChart_, kPanelColor, kTextColor, kPanelColor, 0);
+  lv_chart_set_type(telemetryChart_, LV_CHART_TYPE_LINE);
+  lv_chart_set_point_count(telemetryChart_, kChartPointCount);
+  lv_chart_set_range(telemetryChart_, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
+  lv_chart_set_div_line_count(telemetryChart_, 2, 3);
+  lv_chart_set_update_mode(telemetryChart_, LV_CHART_UPDATE_MODE_SHIFT);
+  lv_obj_set_style_line_color(telemetryChart_, lv_color_hex(kLineColor),
                               LV_PART_MAIN);
+  lv_obj_set_style_line_width(telemetryChart_, 1, LV_PART_MAIN);
+  cpuSeries_ = lv_chart_add_series(telemetryChart_, lv_color_hex(kMintColor),
+                                   LV_CHART_AXIS_PRIMARY_Y);
+  gpuSeries_ = lv_chart_add_series(telemetryChart_, lv_color_hex(kGoldColor),
+                                   LV_CHART_AXIS_PRIMARY_Y);
+  lv_chart_set_series_color(telemetryChart_, cpuSeries_,
+                            lv_color_hex(kMintColor));
+  lv_chart_set_series_color(telemetryChart_, gpuSeries_,
+                            lv_color_hex(kGoldColor));
+  for (size_t index = 0; index < kChartPointCount; ++index) {
+    cpuHistory_[index] = LV_CHART_POINT_NONE;
+    gpuHistory_[index] = LV_CHART_POINT_NONE;
+    lv_chart_set_value_by_id(telemetryChart_, cpuSeries_, index,
+                             LV_CHART_POINT_NONE);
+    lv_chart_set_value_by_id(telemetryChart_, gpuSeries_, index,
+                             LV_CHART_POINT_NONE);
+  }
+  cpuLegend_ = createLabel(telemetry, "CPU --", 14, 86, 68, 16, kMintColor);
+  gpuLegend_ = createLabel(telemetry, "GPU --", 84, 86, 68, 16, kGoldColor);
 
-  lv_obj_t* content = lv_obj_create(screen);
-  lv_obj_set_size(content, 304, 364);
-  lv_obj_set_pos(content, 8, 50);
-  styleObject(content, kBackgroundColor, kTextColor);
-  lv_obj_set_style_pad_all(content, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t* stats = createPanel(screen, kMargin, kStatsY, kContentWidth,
+                                kStatsHeight);
+  createLabel(stats, "Device stats", 12, 8, 150, 20, kTextColor);
+  for (size_t index = 0; index < kStatCount; ++index) {
+    const int16_t y = 34 + static_cast<int16_t>(index) * kStatRowHeight;
+    if (index > 0) {
+      lv_obj_t* divider = lv_obj_create(stats);
+      lv_obj_set_size(divider, 268, 1);
+      lv_obj_set_pos(divider, 12, y - 4);
+      styleSurface(divider, kLineColor, kLineColor, kLineColor, 0);
+    }
+    createLabel(stats, kStatNames[index], 12, y, 150, 18, kMutedTextColor);
+    statValues_[index] = createLabel(stats, "--", 164, y, 116, 18, kTextColor);
+    lv_obj_set_style_text_align(statValues_[index], LV_TEXT_ALIGN_RIGHT,
+                                LV_PART_MAIN);
+  }
 
-  homePage_ = lv_obj_create(content);
-  diagnosticsPage_ = lv_obj_create(content);
-  wifiPage_ = lv_obj_create(content);
-  sshPage_ = lv_obj_create(content);
-  logsPage_ = lv_obj_create(content);
-  preparePage(homePage_);
-  preparePage(diagnosticsPage_);
-  preparePage(wifiPage_);
-  preparePage(sshPage_);
-  preparePage(logsPage_);
+  wifiActionButton_ = createButton(screen, "Connect to Wi-Fi", kMargin,
+                                   kActionY, kContentWidth, kActionHeight,
+                                   kMintColor, kActionTextColor);
+  lv_obj_add_event_cb(wifiActionButton_, handleDashboardControls,
+                      LV_EVENT_CLICKED, this);
+}
 
-  lv_obj_t* homeTitle = lv_label_create(homePage_);
-  lv_label_set_text(homeTitle, "READY FOR LOCAL OPERATION");
-  lv_obj_set_pos(homeTitle, 12, 14);
-  lv_obj_set_style_text_color(homeTitle, lv_color_hex(kAccentColor),
-                              LV_PART_MAIN);
-  homeStatus_ = lv_label_create(homePage_);
-  lv_label_set_text_fmt(
-      homeStatus_,
-      "Display: %s\nTouch: %s\nWi-Fi: %s\nSSH: %s\n\n"
-      "USB serial is optional.\nThe device is ready to run from a power bank.",
-      display_.isReady() ? "READY" : "FAILED",
-      touch_.isReady() ? "READY" : "FAILED", wifi_.stateName(),
-      ssh_.isEnabled() ? "ENABLED" : "DISABLED");
-  lv_obj_set_pos(homeStatus_, 12, 54);
-  lv_obj_set_style_text_color(homeStatus_, lv_color_hex(kTextColor),
-                              LV_PART_MAIN);
+void UiController::buildWifiSheet() {
+  lv_obj_t* screen = lv_scr_act();
+  wifiSheet_ = lv_obj_create(screen);
+  lv_obj_set_size(wifiSheet_, board::kDisplayWidth, board::kDisplayHeight);
+  lv_obj_set_pos(wifiSheet_, 0, 0);
+  styleScreen(wifiSheet_);
 
-  lv_obj_t* diagnosticsTitle = lv_label_create(diagnosticsPage_);
-  lv_label_set_text(diagnosticsTitle, "COMPONENT STATUS");
-  lv_obj_set_pos(diagnosticsTitle, 12, 14);
-  lv_obj_set_style_text_color(diagnosticsTitle, lv_color_hex(kAccentColor),
-                              LV_PART_MAIN);
-  diagnosticsStatus_ = lv_label_create(diagnosticsPage_);
-  lv_label_set_text(
-      diagnosticsStatus_,
-      "HW-001  Display       READY\nHW-002  Touch         READY\n"
-      "HW-003  Wi-Fi        NOT CONFIGURED\nHW-004  IMU           NOT RUN\n"
-      "HW-005  Audio        NOT RUN\nHW-006  SD card       NOT RUN\n\n"
-      "Production service integration is next.");
-  lv_obj_set_pos(diagnosticsStatus_, 12, 54);
-  lv_obj_set_style_text_color(diagnosticsStatus_, lv_color_hex(kTextColor),
-                              LV_PART_MAIN);
+  createLabel(wifiSheet_, "NETWORK SETUP", 16, 14, 170, 18,
+              kFaintTextColor);
+  createLabel(wifiSheet_, "Connect to Wi-Fi", 16, 34, 210, 26, kTextColor);
+  wifiCloseButton_ = createButton(wifiSheet_, "X", 264, 12, 40, 36,
+                                  kPanelColor, kTextColor);
+  lv_obj_add_event_cb(wifiCloseButton_, handleWifiControls, LV_EVENT_CLICKED,
+                      this);
 
-  lv_obj_t* wifiTitle = lv_label_create(wifiPage_);
-  lv_label_set_text(wifiTitle, "WI-FI SETUP");
-  lv_obj_set_pos(wifiTitle, 12, 14);
-  lv_obj_set_style_text_color(wifiTitle, lv_color_hex(kAccentColor),
-                              LV_PART_MAIN);
-  wifiStatus_ = lv_label_create(wifiPage_);
-  lv_obj_set_pos(wifiStatus_, 12, 48);
-  lv_obj_set_style_text_color(wifiStatus_, lv_color_hex(kTextColor),
-                              LV_PART_MAIN);
-  wifiScanButton_ = lv_btn_create(wifiPage_);
-  lv_obj_set_size(wifiScanButton_, 82, 34);
-  lv_obj_set_pos(wifiScanButton_, 210, 10);
-  styleObject(wifiScanButton_, kPanelColor, kTextColor);
+  wifiStatus_ = createLabel(wifiSheet_, "Tap scan to find nearby networks.",
+                            16, 76, 288, 30, kMutedTextColor);
+  wifiScanButton_ = createButton(wifiSheet_, "SCAN", 16, 112, 96, 38,
+                                 kPanelColor, kTextColor);
   lv_obj_add_event_cb(wifiScanButton_, handleWifiControls, LV_EVENT_CLICKED,
                       this);
-  lv_obj_t* scanLabel = lv_label_create(wifiScanButton_);
-  lv_label_set_text(scanLabel, "SCAN");
-  lv_obj_center(scanLabel);
-  wifiList_ = lv_list_create(wifiPage_);
-  lv_obj_set_size(wifiList_, 280, 250);
-  lv_obj_set_pos(wifiList_, 12, 92);
-  styleObject(wifiList_, kPanelColor, kTextColor);
-  wifiPassword_ = lv_textarea_create(wifiPage_);
-  lv_obj_set_size(wifiPassword_, 280, 42);
-  lv_obj_set_pos(wifiPassword_, 12, 44);
+  wifiList_ = createPanel(wifiSheet_, 16, 158, 288, 244);
+
+  wifiBackButton_ = createButton(wifiSheet_, "BACK", 16, 158, 92, 38,
+                                kPanelColor, kTextColor);
+  lv_obj_add_event_cb(wifiBackButton_, handleWifiControls, LV_EVENT_CLICKED,
+                      this);
+  wifiPassword_ = lv_textarea_create(wifiSheet_);
+  lv_obj_set_size(wifiPassword_, 188, 38);
+  lv_obj_set_pos(wifiPassword_, 116, 158);
   lv_textarea_set_one_line(wifiPassword_, true);
   lv_textarea_set_password_mode(wifiPassword_, true);
-  lv_textarea_set_placeholder_text(wifiPassword_, "Wi-Fi password");
-  styleObject(wifiPassword_, kPanelColor, kTextColor);
+  lv_textarea_set_placeholder_text(wifiPassword_, "Password");
+  styleSurface(wifiPassword_, kPanelColor, kTextColor, kLineColor, 10);
   lv_obj_add_event_cb(wifiPassword_, handleWifiKeyboard, LV_EVENT_ALL, this);
-  wifiKeyboard_ = lv_keyboard_create(wifiPage_);
-  lv_obj_set_size(wifiKeyboard_, 304, 270);
-  lv_obj_set_pos(wifiKeyboard_, 0, 92);
+
+  wifiKeyboard_ = lv_keyboard_create(wifiSheet_);
+  lv_obj_set_size(wifiKeyboard_, board::kDisplayWidth, 270);
+  lv_obj_set_pos(wifiKeyboard_, 0, 204);
   lv_keyboard_set_mode(wifiKeyboard_, LV_KEYBOARD_MODE_TEXT_LOWER);
   lv_keyboard_set_textarea(wifiKeyboard_, wifiPassword_);
+  styleSurface(wifiKeyboard_, kPanelColor, kTextColor, kLineColor, 0);
+
+  lv_obj_add_flag(wifiSheet_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(wifiBackButton_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
-
-  lv_obj_t* sshTitle = lv_label_create(sshPage_);
-  lv_label_set_text(sshTitle, "SSH ACCESS");
-  lv_obj_set_pos(sshTitle, 12, 14);
-  lv_obj_set_style_text_color(sshTitle, lv_color_hex(kAccentColor),
-                              LV_PART_MAIN);
-  sshStatus_ = lv_label_create(sshPage_);
-  lv_obj_set_pos(sshStatus_, 12, 50);
-  lv_obj_set_style_text_color(sshStatus_, lv_color_hex(kTextColor),
-                              LV_PART_MAIN);
-  sshActionButton_ = lv_btn_create(sshPage_);
-  lv_obj_set_size(sshActionButton_, 82, 34);
-  lv_obj_set_pos(sshActionButton_, 210, 10);
-  styleObject(sshActionButton_, kPanelColor, kTextColor);
-  lv_obj_add_event_cb(sshActionButton_, handleSshControls, LV_EVENT_CLICKED,
-                      this);
-  lv_obj_t* sshActionLabel = lv_label_create(sshActionButton_);
-  lv_label_set_text(sshActionLabel, "SET UP");
-  lv_obj_center(sshActionLabel);
-  sshInstructions_ = lv_label_create(sshPage_);
-  lv_label_set_text(sshInstructions_,
-                    "SSH is LAN-only and disabled until\na password is configured.\n\n"
-                    "The server exposes diagnostic commands,\nnot an operating-system shell.");
-  lv_obj_set_pos(sshInstructions_, 12, 108);
-  lv_obj_set_style_text_color(sshInstructions_, lv_color_hex(kTextColor),
-                              LV_PART_MAIN);
-  sshPassword_ = lv_textarea_create(sshPage_);
-  lv_obj_set_size(sshPassword_, 280, 42);
-  lv_obj_set_pos(sshPassword_, 12, 44);
-  lv_textarea_set_one_line(sshPassword_, true);
-  lv_textarea_set_password_mode(sshPassword_, true);
-  lv_textarea_set_placeholder_text(sshPassword_, "SSH password");
-  styleObject(sshPassword_, kPanelColor, kTextColor);
-  lv_obj_add_event_cb(sshPassword_, handleSshKeyboard, LV_EVENT_ALL, this);
-  sshKeyboard_ = lv_keyboard_create(sshPage_);
-  lv_obj_set_size(sshKeyboard_, 304, 270);
-  lv_obj_set_pos(sshKeyboard_, 0, 92);
-  lv_keyboard_set_mode(sshKeyboard_, LV_KEYBOARD_MODE_TEXT_LOWER);
-  lv_keyboard_set_textarea(sshKeyboard_, sshPassword_);
-  lv_obj_add_flag(sshPassword_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(sshKeyboard_, LV_OBJ_FLAG_HIDDEN);
-
-  lv_obj_t* logsTitle = lv_label_create(logsPage_);
-  lv_label_set_text(logsTitle, "LIVE DEBUG LOG");
-  lv_obj_set_pos(logsTitle, 12, 14);
-  lv_obj_set_style_text_color(logsTitle, lv_color_hex(kAccentColor),
-                              LV_PART_MAIN);
-  logText_ = lv_textarea_create(logsPage_);
-  lv_obj_set_size(logText_, 280, 290);
-  lv_obj_set_pos(logText_, 12, 54);
-  lv_textarea_set_text(logText_, "Waiting for diagnostic messages...");
-  lv_textarea_set_cursor_click_pos(logText_, false);
-  styleObject(logText_, kPanelColor, kTextColor);
-
-  navigationHome_ = createNavigationButton("HOME", 8);
-  navigationDiagnostics_ = createNavigationButton("DIAG", 67);
-  navigationWifi_ = createNavigationButton("WIFI", 126);
-  navigationSsh_ = createNavigationButton("SSH", 185);
-  navigationLogs_ = createNavigationButton("LOG", 244);
-  lv_obj_add_flag(diagnosticsPage_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(wifiPage_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(sshPage_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(logsPage_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void UiController::showPage(Page page) {
-  lv_obj_add_flag(homePage_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(diagnosticsPage_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(wifiPage_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(sshPage_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(logsPage_, LV_OBJ_FLAG_HIDDEN);
-  switch (page) {
-    case Page::Home:
-      lv_obj_clear_flag(homePage_, LV_OBJ_FLAG_HIDDEN);
-      break;
-    case Page::Diagnostics:
-      lv_obj_clear_flag(diagnosticsPage_, LV_OBJ_FLAG_HIDDEN);
-      break;
-    case Page::Wifi:
-      lv_obj_clear_flag(wifiPage_, LV_OBJ_FLAG_HIDDEN);
-      updateWifiView();
-      break;
-    case Page::Ssh:
-      lv_obj_clear_flag(sshPage_, LV_OBJ_FLAG_HIDDEN);
-      updateSshView();
-      break;
-    case Page::Logs:
-      lv_obj_clear_flag(logsPage_, LV_OBJ_FLAG_HIDDEN);
-      updateLogView();
-      break;
+void UiController::refreshDashboard() {
+  sampleCpuUsage();
+  refreshStats();
+  refreshChart();
+}
+
+void UiController::refreshStats() {
+  char value[48] = {};
+  const bool connected = wifi_.state() == WifiState::Connected;
+  setStatValue(0, connected ? wifi_.configuredSsid() : wifi_.stateName());
+  setStatValue(1, connected ? wifi_.ipAddress().toString().c_str() : "--");
+  if (cpuUsagePercent_ >= 0) {
+    snprintf(value, sizeof(value), "%d%%", cpuUsagePercent_);
+    setStatValue(2, value);
+  } else {
+    setStatValue(2, "--");
   }
+  setStatValue(3, "--");
+  formatUptime(millis() / 1000, value, sizeof(value));
+  setStatValue(4, value);
+  snprintf(value, sizeof(value), "%.1f MB",
+           static_cast<double>(ESP.getFreeHeap()) / 1024.0);
+  setStatValue(5, value);
+  const float temperature = temperatureRead();
+  if (std::isfinite(temperature)) {
+    snprintf(value, sizeof(value), "%.1f C", static_cast<double>(temperature));
+    setStatValue(6, value);
+  } else {
+    setStatValue(6, "--");
+  }
+  setStatValue(7, kFirmwareVersion);
 }
 
-void UiController::showWifiPassword(size_t networkIndex) {
-  if (wifi_.network(networkIndex) == nullptr) {
+void UiController::refreshChart() {
+  if (cpuUsagePercent_ >= 0 && !chartSeeded_) {
+    for (size_t index = 0; index < kChartPointCount; ++index) {
+      cpuHistory_[index] = cpuUsagePercent_;
+    }
+    chartSeeded_ = true;
+  }
+
+  setMetricLabel(cpuLegend_, "CPU", cpuUsagePercent_);
+  setMetricLabel(gpuLegend_, "GPU", kMetricUnavailable);
+  if (!chartSeeded_ || millis() - lastChartAt_ < kChartPeriodMs) {
     return;
   }
-  selectedNetworkIndex_ = networkIndex;
-  lv_textarea_set_text(wifiPassword_, "");
-  lv_obj_add_flag(wifiList_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(wifiScanButton_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
-  lv_keyboard_set_textarea(wifiKeyboard_, wifiPassword_);
-  lv_label_set_text_fmt(wifiStatus_, "Password for: %s",
-                        wifi_.network(networkIndex)->ssid);
+
+  lastChartAt_ = millis();
+  for (size_t index = 1; index < kChartPointCount; ++index) {
+    cpuHistory_[index - 1] = cpuHistory_[index];
+    gpuHistory_[index - 1] = gpuHistory_[index];
+  }
+  cpuHistory_[kChartPointCount - 1] = cpuUsagePercent_;
+  gpuHistory_[kChartPointCount - 1] = LV_CHART_POINT_NONE;
+  for (size_t index = 0; index < kChartPointCount; ++index) {
+    lv_chart_set_value_by_id(telemetryChart_, cpuSeries_, index,
+                             cpuHistory_[index]);
+    lv_chart_set_value_by_id(telemetryChart_, gpuSeries_, index,
+                             gpuHistory_[index]);
+  }
+  lv_chart_refresh(telemetryChart_);
 }
 
-void UiController::hideWifiPassword() {
+void UiController::refreshWifiSheet() {
+  if (view_ != View::WifiSetup) {
+    return;
+  }
+
+  const bool scanning = wifi_.scanInProgress();
+  if (wifiListDirty_ || scanning != renderedScanInProgress_ ||
+      wifi_.networkCount() != renderedNetworkCount_) {
+    renderWifiNetworks();
+    wifiListDirty_ = false;
+    renderedScanInProgress_ = scanning;
+    renderedNetworkCount_ = wifi_.networkCount();
+  }
+}
+
+void UiController::sampleCpuUsage() {
+#if configGENERATE_RUN_TIME_STATS == 1
+  uint32_t idleRuntime[kCpuCoreCount] = {};
+  for (uint8_t core = 0; core < kCpuCoreCount; ++core) {
+    TaskHandle_t idleTask = xTaskGetIdleTaskHandleForCPU(core);
+    if (idleTask == nullptr) {
+      cpuUsagePercent_ = kMetricUnavailable;
+      return;
+    }
+    TaskStatus_t status = {};
+    vTaskGetInfo(idleTask, &status, pdFALSE, eInvalid);
+    idleRuntime[core] = status.ulRunTimeCounter;
+  }
+
+  const uint32_t now = millis();
+  if (!cpuSampleReady_) {
+    for (uint8_t core = 0; core < kCpuCoreCount; ++core) {
+      lastIdleRuntime_[core] = idleRuntime[core];
+    }
+    lastCpuSampleAt_ = now;
+    cpuSampleReady_ = true;
+    return;
+  }
+
+  const uint32_t elapsedMs = now - lastCpuSampleAt_;
+  uint32_t idleDelta = 0;
+  for (uint8_t core = 0; core < kCpuCoreCount; ++core) {
+    idleDelta += idleRuntime[core] - lastIdleRuntime_[core];
+    lastIdleRuntime_[core] = idleRuntime[core];
+  }
+  lastCpuSampleAt_ = now;
+  const uint64_t capacity = static_cast<uint64_t>(elapsedMs) * 1000ULL *
+                            getCpuFrequencyMhz() * kCpuCoreCount;
+  if (capacity == 0) {
+    return;
+  }
+  const uint64_t busyRuntime = idleDelta >= capacity ? 0 : capacity - idleDelta;
+  cpuUsagePercent_ = static_cast<int16_t>((busyRuntime * 100) / capacity);
+  if (cpuUsagePercent_ > 100) {
+    cpuUsagePercent_ = 100;
+  }
+#else
+  cpuUsagePercent_ = kMetricUnavailable;
+  lastCpuSampleAt_ = millis();
+#endif
+}
+
+void UiController::setStatValue(size_t index, const char* value) {
+  if (index >= kStatCount || statValues_[index] == nullptr) {
+    return;
+  }
+  lv_label_set_text(statValues_[index], value == nullptr ? "--" : value);
+}
+
+void UiController::showWifiSheet() {
+  view_ = View::WifiSetup;
   selectedNetworkIndex_ = WifiService::kMaxNetworks;
+  lv_obj_clear_flag(wifiSheet_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(wifiList_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(wifiScanButton_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(wifiBackButton_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
+  lv_label_set_text(wifiStatus_, "Scanning for nearby networks...");
+  wifiListDirty_ = true;
+  wifi_.startScan();
+  refreshWifiSheet();
+}
+
+void UiController::hideWifiSheet() {
+  view_ = View::Dashboard;
+  selectedNetworkIndex_ = WifiService::kMaxNetworks;
+  lv_obj_add_flag(wifiSheet_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(wifiBackButton_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_clear_flag(wifiList_, LV_OBJ_FLAG_HIDDEN);
   lv_obj_clear_flag(wifiScanButton_, LV_OBJ_FLAG_HIDDEN);
-  updateWifiView();
 }
 
-void UiController::showSshPassword() {
-  lv_textarea_set_text(sshPassword_, "");
-  lv_obj_add_flag(sshInstructions_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(sshActionButton_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(sshPassword_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(sshKeyboard_, LV_OBJ_FLAG_HIDDEN);
-  lv_keyboard_set_textarea(sshKeyboard_, sshPassword_);
-  lv_label_set_text(sshStatus_, "Set password for SSH user: nova");
-}
-
-void UiController::hideSshPassword() {
-  lv_obj_add_flag(sshPassword_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(sshKeyboard_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(sshInstructions_, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(sshActionButton_, LV_OBJ_FLAG_HIDDEN);
-  updateSshView();
-}
-
-void UiController::updateHomeView() {
-  if (homeStatus_ == nullptr) {
+void UiController::showWifiPassword(size_t networkIndex) {
+  const WifiNetwork* network = wifi_.network(networkIndex);
+  if (network == nullptr) {
     return;
   }
-  const String ip = wifi_.ipAddress().toString();
-  lv_label_set_text_fmt(
-      homeStatus_,
-      "Display: %s\nTouch: %s\nWi-Fi: %s\nIP: %s\nSSH: %s\n\n"
-      "USB serial is optional.\nThe device is ready to run from a power bank.",
-      display_.isReady() ? "READY" : "FAILED",
-      touch_.isReady() ? "READY" : "FAILED", wifi_.stateName(), ip.c_str(),
-      ssh_.isEnabled() ? "ENABLED" : "DISABLED");
-}
-
-void UiController::updateDiagnosticsView() {
-  if (diagnosticsStatus_ == nullptr) {
-    return;
-  }
-  lv_label_set_text_fmt(
-      diagnosticsStatus_,
-      "HW-001  Display       %s\nHW-002  Touch         %s\n"
-      "HW-003  Wi-Fi        %s\nHW-004  IMU           NOT RUN\n"
-      "HW-005  Audio        NOT RUN\nHW-006  SD card       NOT RUN\n\n"
-      "Production service integration is next.",
-      display_.isReady() ? "READY" : "FAILED",
-      touch_.isReady() ? "READY" : "FAILED", wifi_.stateName());
-}
-
-void UiController::updateWifiView() {
-  if (wifiStatus_ == nullptr || wifiList_ == nullptr) {
+  if (!network->encrypted) {
+    wifi_.connect(network->ssid, "", true);
+    hideWifiSheet();
     return;
   }
 
-  const String ip = wifi_.ipAddress().toString();
-  lv_label_set_text_fmt(wifiStatus_, "State: %s\nSSID: %s\nIP: %s  RSSI: %ld",
-                        wifi_.stateName(), wifi_.configuredSsid(), ip.c_str(),
-                        static_cast<long>(wifi_.rssi()));
-  lv_obj_t* scanLabel = lv_obj_get_child(wifiScanButton_, 0);
-  if (scanLabel != nullptr) {
-    lv_label_set_text(scanLabel, wifi_.scanInProgress() ? "WAIT" : "SCAN");
-  }
-  if (wifi_.networkCount() == renderedNetworkCount_) {
-    return;
-  }
+  selectedNetworkIndex_ = networkIndex;
+  lv_textarea_set_text(wifiPassword_, "");
+  lv_label_set_text_fmt(wifiStatus_, "Password for %s", network->ssid);
+  lv_obj_add_flag(wifiList_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(wifiScanButton_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(wifiBackButton_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
+  lv_keyboard_set_textarea(wifiKeyboard_, wifiPassword_);
+}
 
+void UiController::hideWifiPassword() {
+  selectedNetworkIndex_ = WifiService::kMaxNetworks;
+  lv_obj_add_flag(wifiBackButton_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(wifiPassword_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(wifiKeyboard_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(wifiList_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(wifiScanButton_, LV_OBJ_FLAG_HIDDEN);
+  lv_label_set_text(wifiStatus_, "Choose a nearby network.");
+}
+
+void UiController::renderWifiNetworks() {
   while (lv_obj_get_child(wifiList_, 0) != nullptr) {
     lv_obj_del(lv_obj_get_child(wifiList_, 0));
   }
   for (lv_obj_t*& button : wifiNetworkButtons_) {
     button = nullptr;
   }
-  renderedNetworkCount_ = wifi_.networkCount();
-  for (size_t index = 0; index < renderedNetworkCount_; ++index) {
+
+  const size_t count = wifi_.networkCount();
+  if (wifi_.scanInProgress()) {
+    lv_label_set_text(wifiStatus_, "Scanning for nearby networks...");
+  } else if (count == 0) {
+    lv_label_set_text(wifiStatus_, "No networks found. Tap scan to retry.");
+  } else {
+    lv_label_set_text(wifiStatus_, "Choose a nearby network.");
+  }
+
+  for (size_t index = 0; index < count; ++index) {
     const WifiNetwork* network = wifi_.network(index);
     if (network == nullptr) {
       continue;
     }
-    char label[64] = {};
-    snprintf(label, sizeof(label), "%s  %ld dBm %s", network->ssid,
-             static_cast<long>(network->rssi), network->encrypted ? "LOCK" : "OPEN");
+    char label[80] = {};
+    snprintf(label, sizeof(label), "%s  %s", network->ssid,
+             network->encrypted ? "LOCK" : "OPEN");
     wifiNetworkButtons_[index] = lv_list_add_btn(wifiList_, nullptr, label);
+    lv_obj_set_height(wifiNetworkButtons_[index], 44);
+    lv_obj_set_style_bg_color(wifiNetworkButtons_[index],
+                              lv_color_hex(kPanelColor), LV_PART_MAIN);
+    lv_obj_set_style_text_color(wifiNetworkButtons_[index],
+                                lv_color_hex(kTextColor), LV_PART_MAIN);
     lv_obj_add_event_cb(wifiNetworkButtons_[index], handleWifiControls,
                         LV_EVENT_CLICKED, this);
   }
-}
-
-void UiController::updateSshView() {
-  if (sshStatus_ == nullptr || sshActionButton_ == nullptr) {
-    return;
-  }
-
-  const String ip = wifi_.ipAddress().toString();
-  if (!ssh_.hasCredentials()) {
-    lv_label_set_text(sshStatus_, "Status: NOT CONFIGURED\nUser: nova");
-  } else if (ssh_.isEnabled()) {
-    lv_label_set_text_fmt(sshStatus_, "Status: %s\nssh %s@%s",
-                          ssh_.isReady() ? "READY" : "STARTING", ssh_.username(),
-                          ip.c_str());
-  } else {
-    lv_label_set_text_fmt(sshStatus_, "Status: DISABLED\nUser: %s",
-                          ssh_.username());
-  }
-  lv_obj_t* actionLabel = lv_obj_get_child(sshActionButton_, 0);
-  if (actionLabel != nullptr) {
-    lv_label_set_text(actionLabel,
-                      ssh_.isEnabled() ? "DISABLE"
-                                       : ssh_.hasCredentials() ? "ENABLE" : "SET UP");
-  }
-}
-
-void UiController::updateLogView() {
-  const size_t count = logger_.copy(logSnapshot_, kLogSnapshotCapacity);
-  size_t offset = 0;
-  logTextBuffer_[0] = '\0';
-  for (size_t index = 0; index < count && offset < kLogTextCapacity; ++index) {
-    const LogEntry& entry = logSnapshot_[index];
-    const int written = snprintf(
-        logTextBuffer_ + offset, kLogTextCapacity - offset, "%lus %-5s %s\n",
-        static_cast<unsigned long>(entry.timestampMs / 1000),
-        levelName(entry.level), entry.message);
-    if (written <= 0) {
-      break;
-    }
-    offset += static_cast<size_t>(written) < kLogTextCapacity - offset
-                  ? static_cast<size_t>(written)
-                  : kLogTextCapacity - offset - 1;
-  }
-  if (count == 0) {
-    snprintf(logTextBuffer_, sizeof(logTextBuffer_),
-             "No diagnostic messages recorded.");
-  }
-  if (logText_ != nullptr) {
-    lv_textarea_set_text(logText_, logTextBuffer_);
-    lv_textarea_set_cursor_pos(logText_, LV_TEXTAREA_CURSOR_LAST);
-  }
-}
-
-void UiController::preparePage(lv_obj_t* page) {
-  lv_obj_set_size(page, 304, 364);
-  lv_obj_set_pos(page, 0, 0);
-  styleObject(page, kBackgroundColor, kTextColor);
-  lv_obj_set_style_pad_all(page, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE);
-}
-
-lv_obj_t* UiController::createNavigationButton(const char* text, int16_t x) {
-  lv_obj_t* button = lv_btn_create(lv_scr_act());
-  lv_obj_set_size(button, 72, 44);
-  lv_obj_set_pos(button, x, 426);
-  styleObject(button, kPanelColor, kTextColor);
-  lv_obj_add_event_cb(button, handleNavigation, LV_EVENT_CLICKED, this);
-
-  lv_obj_t* label = lv_label_create(button);
-  lv_label_set_text(label, text);
-  lv_obj_center(label);
-  return button;
-}
-
-const char* UiController::levelName(LogLevel level) const {
-  switch (level) {
-    case LogLevel::Debug:
-      return "DEBUG";
-    case LogLevel::Info:
-      return "INFO";
-    case LogLevel::Warning:
-      return "WARN";
-    case LogLevel::Error:
-      return "ERROR";
-  }
-  return "?";
 }
 
 }  // namespace nova
