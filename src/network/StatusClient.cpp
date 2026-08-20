@@ -1,8 +1,5 @@
 #include "StatusClient.h"
 
-#include <mbedtls/ssl.h>
-#include <mbedtls/x509.h>
-
 #include <algorithm>
 #include <cerrno>
 #include <climits>
@@ -10,7 +7,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <strings.h>
-#include <time.h>
+
+#include "StatusCodec.h"
 
 namespace nova {
 namespace {
@@ -34,284 +32,259 @@ const char* skipSpaces(const char* value) {
   return value;
 }
 
-bool parseNonnegativeInteger(const char* value, long maximum, long& parsed) {
+bool parseUnsigned(const char* value, unsigned long& parsed) {
   value = skipSpaces(value);
   errno = 0;
   char* end = nullptr;
-  const long result = std::strtol(value, &end, 10);
+  const unsigned long result = std::strtoul(value, &end, 10);
   while (end != nullptr && (*end == ' ' || *end == '\t')) {
     ++end;
   }
   if (errno != 0 || end == value || end == nullptr || *end != '\0' ||
-      result < 0 || result > maximum) {
+      *value == '-') {
     return false;
   }
   parsed = result;
   return true;
 }
 
+bool parseCappedRetryAfter(const char* value, uint32_t& milliseconds) {
+  value = skipSpaces(value);
+  if (*value < '0' || *value > '9') {
+    return false;
+  }
+  uint32_t seconds = 0;
+  while (*value >= '0' && *value <= '9') {
+    if (seconds < 60) {
+      const uint32_t digit = static_cast<uint32_t>(*value - '0');
+      seconds = std::min(60U, seconds * 10U + digit);
+    }
+    ++value;
+  }
+  value = skipSpaces(value);
+  if (*value != '\0') {
+    return false;
+  }
+  milliseconds = seconds * 1000U;
+  return true;
+}
+
+PollOutcome classifyHttpStatus(int statusCode) {
+  if (statusCode == 401 || statusCode == 403) {
+    return PollOutcome::monitorError(PollError::Authentication);
+  }
+  if (statusCode == 426) {
+    return PollOutcome::monitorError(PollError::UnsupportedSchema);
+  }
+  if (statusCode == 429) {
+    return PollOutcome::transientError(PollError::RateLimited);
+  }
+  if (statusCode >= 500 && statusCode <= 599) {
+    return PollOutcome::transientError(PollError::ServerFailure);
+  }
+  return PollOutcome::monitorError(PollError::UnexpectedHttpStatus);
+}
+
 }  // namespace
 
 bool StatusClient::begin(const StatusClientConfig& config) {
   configured_ =
-      copyConfigString(config.address, address_, sizeof(address_)) &&
       copyConfigString(config.tlsServerName, tlsServerName_,
                        sizeof(tlsServerName_)) &&
-      config.port != 0 &&
       copyConfigString(config.path, path_, sizeof(path_)) && path_[0] == '/' &&
-      copyConfigString(config.bearerToken, token_, sizeof(token_)) &&
-      config.caCertificatePem != nullptr && config.caCertificatePem[0] != '\0';
-  if (!configured_) {
-    return false;
-  }
-
-  metadata_.statusCode = 0;
-  port_ = config.port;
-  caCertificatePem_ = config.caCertificatePem;
-  // Keep CA verification and SNI/hostname validation enabled for every request.
-  tls_.setCACert(caCertificatePem_);
-  tls_.setHandshakeTimeout(3);
-  tls_.setTimeout(kReadTimeoutMs / 1000U);
-  return true;
+      copyConfigString(config.bearerToken, token_, sizeof(token_));
+  return configured_;
 }
 
 bool StatusClient::configured() const { return configured_; }
 
 bool StatusClient::update(uint32_t nowMs, bool wifiConnected,
-                          PollOutcome& outcome) {
+                          StatusTransport& transport, PollOutcome& outcome) {
   if (!configured_) {
     return false;
   }
+
   if (!wifiConnected) {
-    cancel();
-    return false;
-  }
-
-  // X.509 validity periods require a plausible wall clock. SNTP proceeds in
-  // the ESP networking task; the main loop remains responsive while waiting.
-  if (static_cast<uint64_t>(time(nullptr)) < kMinimumTlsEpochSeconds) {
-    if (!timeSyncRequested_) {
-      configTime(0, 0, "pool.ntp.org", "time.cloudflare.com");
-      timeSyncRequested_ = true;
+    if (wifiWasConnected_ || inFlight_) {
+      transport.cancel();
     }
+    wifiWasConnected_ = false;
+    inFlight_ = false;
+    waiting_ = false;
     return false;
   }
 
-  if (state_ == State::Idle) {
-    if (waiting_ && nowMs - completedAtMs_ < waitDurationMs_) {
+  if (!wifiWasConnected_) {
+    wifiWasConnected_ = true;
+    waiting_ = false;
+  }
+
+  if (inFlight_) {
+    HttpsResponseView response{};
+    if (!transport.take(response)) {
       return false;
     }
-    waiting_ = false;
-    if (startRequest(nowMs, outcome)) {
-      return true;
-    }
+    inFlight_ = false;
+    uint32_t retryAfterMs = kNoRetryAfter;
+    outcome = processResponse(response, retryAfterMs);
+    completedAtMs_ = nowMs;
+    waitDurationMs_ = outcome.error == PollError::RateLimited &&
+                              retryAfterMs != kNoRetryAfter
+                          ? retryAfterMs
+                          : kPollIntervalMs;
+    waiting_ = true;
+    return true;
   }
 
-  size_t budget = kMaxBytesPerUpdate;
-  while (budget > 0 && tls_.available() > 0) {
-    phaseActivityAtMs_ = nowMs;
-    if (state_ == State::Body) {
-      const size_t remaining = static_cast<size_t>(metadata_.contentLength) - bodyBytes_;
-      uint8_t chunk[kMaxBytesPerUpdate];
-      const size_t count = std::min(
-          {budget, remaining, static_cast<size_t>(tls_.available())});
-      const int read = tls_.read(chunk, count);
-      if (read <= 0) {
-        break;
-      }
-      if (!decoder_.append(chunk, static_cast<size_t>(read))) {
-        return complete(decoder_.finish(), nowMs, outcome);
-      }
-      bodyBytes_ += static_cast<size_t>(read);
-      budget -= static_cast<size_t>(read);
-      if (bodyBytes_ == static_cast<size_t>(metadata_.contentLength)) {
-        return complete(decoder_.finish(), nowMs, outcome);
-      }
-    } else {
-      const int next = tls_.read();
-      if (next < 0) {
-        break;
-      }
-      --budget;
-      if (consumeLineByte(static_cast<char>(next), nowMs, outcome)) {
-        return true;
-      }
-    }
+  if (waiting_ && nowMs - completedAtMs_ < waitDurationMs_) {
+    return false;
   }
 
-  if (state_ != State::Idle && !tls_.connected() && tls_.available() == 0) {
-    // A closed 200 response before the declared byte count is a broken success
-    // contract, not a snapshot and never a freshness refresh.
-    return fail(PollError::InvalidContract, false, nowMs, outcome);
+  HttpsRequest request{};
+  if (!buildRequest(request) || !transport.submit(request)) {
+    return false;
   }
-  if (state_ != State::Idle && nowMs - phaseActivityAtMs_ >= kReadTimeoutMs) {
-    return fail(PollError::Timeout, true, nowMs, outcome);
-  }
-  return false;
-}
-
-void StatusClient::cancel() {
-  tls_.stop();
-  state_ = State::Idle;
+  inFlight_ = true;
   waiting_ = false;
-  resetResponse();
-}
-
-bool StatusClient::startRequest(uint32_t nowMs, PollOutcome& outcome) {
-  resetResponse();
-  tls_.stop();
-  tls_.setCACert(caCertificatePem_);
-  IPAddress connectAddress;
-  if (!connectAddress.fromString(address_) &&
-      WiFi.hostByName(address_, connectAddress) != 1) {
-    return fail(PollError::DnsOrConnect, true, nowMs, outcome);
-  }
-  if (!tls_.connect(connectAddress, port_, tlsServerName_, caCertificatePem_,
-                    nullptr, nullptr)) {
-    const PollError error = connectFailure();
-    return fail(error, error != PollError::TlsValidation, nowMs, outcome);
-  }
-
-  tls_.print("GET ");
-  tls_.print(path_);
-  tls_.print(" HTTP/1.1\r\nHost: ");
-  tls_.print(tlsServerName_);
-  tls_.print("\r\nAccept: application/json\r\nAuthorization: Bearer ");
-  tls_.print(token_);
-  tls_.print("\r\nX-Nova-Schema: 1\r\nConnection: close\r\n\r\n");
-  state_ = State::StatusLine;
-  phaseActivityAtMs_ = nowMs;
   return false;
 }
 
-bool StatusClient::consumeLineByte(char byte, uint32_t nowMs,
-                                   PollOutcome& outcome) {
-  ++headerBytes_;
-  if (headerBytes_ > kMaxHeaderBytes) {
-    return fail(PollError::InvalidContract, false, nowMs, outcome);
-  }
-  if (byte == '\n') {
-    if (lineLength_ > 0 && line_[lineLength_ - 1] == '\r') {
-      --lineLength_;
-    }
-    line_[lineLength_] = '\0';
-    return processCompleteLine(nowMs, outcome);
-  }
-  if (lineLength_ >= kMaxLineBytes) {
-    return fail(PollError::InvalidContract, false, nowMs, outcome);
-  }
-  line_[lineLength_++] = byte;
-  return false;
-}
-
-bool StatusClient::processCompleteLine(uint32_t nowMs, PollOutcome& outcome) {
-  if (state_ == State::StatusLine) {
-    char protocol[16]{};
-    int status = 0;
-    const bool valid = std::sscanf(line_, "%15s %d", protocol, &status) == 2 &&
-                       std::strncmp(protocol, "HTTP/1.", 7) == 0 && status >= 100 &&
-                       status <= 599;
-    lineLength_ = 0;
-    if (!valid) {
-      return fail(PollError::InvalidContract, false, nowMs, outcome);
-    }
-    metadata_.statusCode = status;
-    state_ = State::Headers;
+bool StatusClient::buildRequest(HttpsRequest& request) const {
+  const int length = std::snprintf(
+      request.bytes, sizeof(request.bytes),
+      "GET %s HTTP/1.1\r\nHost: %s\r\nAccept: application/json\r\n"
+      "Authorization: Bearer %s\r\nX-Nova-Schema: 1\r\n"
+      "Connection: close\r\n\r\n",
+      path_, tlsServerName_, token_);
+  if (length <= 0 || static_cast<size_t>(length) >= sizeof(request.bytes)) {
+    request = {};
     return false;
   }
-
-  if (lineLength_ == 0) {
-    decoder_.reset(metadata_);
-    if (metadata_.statusCode != 200 || metadata_.contentLength <= 0 ||
-        metadata_.contentLength > static_cast<int32_t>(kMaxStatusBodyBytes) ||
-        !contentLengthSeen_ || !contentTypeSeen_ ||
-        std::strcmp(metadata_.contentType, "application/json") != 0) {
-      PollOutcome result = decoder_.finish();
-      return complete(result, nowMs, outcome);
-    }
-    state_ = State::Body;
-    return false;
-  }
-
-  constexpr char kLengthHeader[] = "Content-Length:";
-  constexpr char kTypeHeader[] = "Content-Type:";
-  constexpr char kTransferHeader[] = "Transfer-Encoding:";
-  constexpr char kRetryHeader[] = "Retry-After:";
-  if (strncasecmp(line_, kLengthHeader, sizeof(kLengthHeader) - 1) == 0) {
-    if (contentLengthSeen_) {
-      return fail(PollError::InvalidContract, false, nowMs, outcome);
-    }
-    long parsed = 0;
-    if (!parseNonnegativeInteger(line_ + sizeof(kLengthHeader) - 1, INT32_MAX,
-                                 parsed)) {
-      return fail(PollError::InvalidContract, false, nowMs, outcome);
-    }
-    metadata_.contentLength = static_cast<int32_t>(parsed);
-    contentLengthSeen_ = true;
-  } else if (strncasecmp(line_, kTypeHeader, sizeof(kTypeHeader) - 1) == 0) {
-    if (contentTypeSeen_) {
-      return fail(PollError::InvalidContract, false, nowMs, outcome);
-    }
-    const char* value = skipSpaces(line_ + sizeof(kTypeHeader) - 1);
-    std::snprintf(metadata_.contentType, sizeof(metadata_.contentType), "%s", value);
-    contentTypeSeen_ = true;
-  } else if (strncasecmp(line_, kTransferHeader,
-                         sizeof(kTransferHeader) - 1) == 0) {
-    return fail(PollError::InvalidContract, false, nowMs, outcome);
-  } else if (strncasecmp(line_, kRetryHeader, sizeof(kRetryHeader) - 1) == 0) {
-    long seconds = 0;
-    if (parseNonnegativeInteger(line_ + sizeof(kRetryHeader) - 1, 60, seconds)) {
-      retryAfterMs_ = static_cast<uint32_t>(seconds) * 1000U;
-    }
-  }
-  lineLength_ = 0;
-  return false;
-}
-
-bool StatusClient::complete(PollOutcome result, uint32_t nowMs,
-                            PollOutcome& outcome) {
-  tls_.stop();
-  state_ = State::Idle;
-  completedAtMs_ = nowMs;
-  waitDurationMs_ = result.error == PollError::RateLimited && retryAfterMs_ > 0
-                        ? retryAfterMs_
-                        : kPollIntervalMs;
-  waiting_ = true;
-  outcome = result;
+  request.length = static_cast<uint16_t>(length);
   return true;
 }
 
-bool StatusClient::fail(PollError error, bool transient, uint32_t nowMs,
-                        PollOutcome& outcome) {
-  return complete(transient ? PollOutcome::transientError(error)
-                            : PollOutcome::monitorError(error),
-                  nowMs, outcome);
-}
+PollOutcome StatusClient::processResponse(const HttpsResponseView& response,
+                                          uint32_t& retryAfterMs) const {
+  retryAfterMs = kNoRetryAfter;
+  switch (response.status) {
+    case HttpsTransportStatus::Timeout:
+      return PollOutcome::transientError(PollError::Timeout);
+    case HttpsTransportStatus::ConnectFailure:
+      return PollOutcome::transientError(PollError::DnsOrConnect);
+    case HttpsTransportStatus::TlsValidationFailure:
+      return PollOutcome::monitorError(PollError::TlsValidation);
+    case HttpsTransportStatus::ResponseTooLarge:
+      return PollOutcome::monitorError(PollError::OversizedBody);
+    case HttpsTransportStatus::Complete:
+      break;
+  }
 
-PollError StatusClient::connectFailure() {
-  char ignoredMessage[80]{};
-  const int error = tls_.lastError(ignoredMessage, sizeof(ignoredMessage));
-  const bool x509Error = error <= MBEDTLS_ERR_X509_FEATURE_UNAVAILABLE &&
-                         error >= MBEDTLS_ERR_X509_FATAL_ERROR;
-  const bool tlsCertificateError =
-      error == MBEDTLS_ERR_SSL_PEER_VERIFY_FAILED ||
-      error == MBEDTLS_ERR_SSL_CA_CHAIN_REQUIRED ||
-      error == MBEDTLS_ERR_SSL_CERTIFICATE_REQUIRED ||
-      error == MBEDTLS_ERR_SSL_CERTIFICATE_TOO_LARGE ||
-      error == MBEDTLS_ERR_SSL_BAD_HS_CERTIFICATE;
-  return x509Error || tlsCertificateError ? PollError::TlsValidation
-                                         : PollError::DnsOrConnect;
-}
+  if (response.bytes == nullptr || response.length == 0 ||
+      response.length > kMaxRawHttpResponseBytes) {
+    return PollOutcome::monitorError(PollError::InvalidContract);
+  }
 
-void StatusClient::resetResponse() {
-  metadata_ = {};
-  metadata_.contentLength = -1;
-  lineLength_ = 0;
-  headerBytes_ = 0;
-  bodyBytes_ = 0;
-  retryAfterMs_ = 0;
-  contentLengthSeen_ = false;
-  contentTypeSeen_ = false;
+  size_t headerEnd = 0;
+  for (size_t index = 0; index + 3 < response.length; ++index) {
+    if (response.bytes[index] == '\r' && response.bytes[index + 1] == '\n' &&
+        response.bytes[index + 2] == '\r' && response.bytes[index + 3] == '\n') {
+      headerEnd = index + 4;
+      break;
+    }
+  }
+  if (headerEnd == 0 || headerEnd > kMaxResponseHeaderBytes) {
+    return PollOutcome::monitorError(PollError::InvalidContract);
+  }
+
+  size_t cursor = 0;
+  auto nextLine = [&](char (&line)[kMaxHeaderLineBytes + 1]) -> bool {
+    size_t end = cursor;
+    while (end + 1 < headerEnd &&
+           !(response.bytes[end] == '\r' && response.bytes[end + 1] == '\n')) {
+      ++end;
+    }
+    const size_t length = end - cursor;
+    if (end + 1 >= headerEnd || length > kMaxHeaderLineBytes) {
+      return false;
+    }
+    std::memcpy(line, response.bytes + cursor, length);
+    line[length] = '\0';
+    cursor = end + 2;
+    return true;
+  };
+
+  char line[kMaxHeaderLineBytes + 1]{};
+  if (!nextLine(line)) {
+    return PollOutcome::monitorError(PollError::InvalidContract);
+  }
+  char protocol[16]{};
+  int statusCode = 0;
+  if (std::sscanf(line, "%15s %d", protocol, &statusCode) != 2 ||
+      std::strncmp(protocol, "HTTP/1.", 7) != 0 || statusCode < 100 ||
+      statusCode > 599) {
+    return PollOutcome::monitorError(PollError::InvalidContract);
+  }
+
+  int32_t contentLength = -1;
+  char contentType[40]{};
+  bool contentLengthSeen = false;
+  bool contentTypeSeen = false;
+  while (cursor < headerEnd - 2) {
+    if (!nextLine(line)) {
+      return PollOutcome::monitorError(PollError::InvalidContract);
+    }
+    if (line[0] == '\0') {
+      break;
+    }
+    constexpr char kLengthHeader[] = "Content-Length:";
+    constexpr char kTypeHeader[] = "Content-Type:";
+    constexpr char kTransferHeader[] = "Transfer-Encoding:";
+    constexpr char kRetryHeader[] = "Retry-After:";
+    if (strncasecmp(line, kLengthHeader, sizeof(kLengthHeader) - 1) == 0) {
+      unsigned long parsed = 0;
+      if (contentLengthSeen ||
+          !parseUnsigned(line + sizeof(kLengthHeader) - 1, parsed) ||
+          parsed > static_cast<unsigned long>(INT32_MAX)) {
+        return PollOutcome::monitorError(PollError::InvalidContract);
+      }
+      contentLength = static_cast<int32_t>(parsed);
+      contentLengthSeen = true;
+    } else if (strncasecmp(line, kTypeHeader, sizeof(kTypeHeader) - 1) == 0) {
+      if (contentTypeSeen) {
+        return PollOutcome::monitorError(PollError::InvalidContract);
+      }
+      const char* value = skipSpaces(line + sizeof(kTypeHeader) - 1);
+      if (std::strlen(value) >= sizeof(contentType)) {
+        return PollOutcome::monitorError(PollError::InvalidContract);
+      }
+      std::strcpy(contentType, value);
+      contentTypeSeen = true;
+    } else if (strncasecmp(line, kTransferHeader,
+                           sizeof(kTransferHeader) - 1) == 0) {
+      return PollOutcome::monitorError(PollError::InvalidContract);
+    } else if (strncasecmp(line, kRetryHeader, sizeof(kRetryHeader) - 1) == 0) {
+      parseCappedRetryAfter(line + sizeof(kRetryHeader) - 1, retryAfterMs);
+    }
+  }
+
+  if (statusCode != 200) {
+    return classifyHttpStatus(statusCode);
+  }
+  const size_t bodyLength = response.length - headerEnd;
+  if (!contentLengthSeen || !contentTypeSeen || contentLength < 0 ||
+      contentLength > 4096 || std::strcmp(contentType, "application/json") != 0 ||
+      bodyLength != static_cast<size_t>(contentLength)) {
+    return PollOutcome::monitorError(contentLength > 4096
+                                         ? PollError::OversizedBody
+                                         : PollError::InvalidContract);
+  }
+
+  StatusSnapshot snapshot{};
+  const PollError decodeError =
+      detail::decodeStatusBody(response.bytes + headerEnd, bodyLength, snapshot);
+  return decodeError == PollError::None ? PollOutcome::accepted(snapshot)
+                                        : PollOutcome::monitorError(decodeError);
 }
 
 }  // namespace nova

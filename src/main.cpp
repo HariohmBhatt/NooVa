@@ -8,6 +8,7 @@
 
 #include "hardware/BoardDisplay.h"
 #include "hardware/BoardTouch.h"
+#include "network/HttpsPollTask.h"
 #include "network/StatusClient.h"
 #include "network/WifiManager.h"
 #include "status/SentinelModel.h"
@@ -15,6 +16,10 @@
 namespace {
 
 constexpr uint32_t kSerialBaud = 115200;
+constexpr uint32_t kWifiUpdateIntervalMs = 20;
+constexpr uint32_t kTouchPollIntervalMs = 20;
+constexpr uint32_t kStatusDispatchIntervalMs = 5;
+constexpr uint32_t kPresentationUpdateIntervalMs = 100;
 constexpr uint32_t kSerialReportIntervalMs = 1000;
 constexpr uint16_t kColorStarting = 0x0861;
 constexpr uint16_t kColorHealthy = 0x0328;
@@ -27,12 +32,27 @@ nova::BoardDisplay gDisplay;
 nova::BoardTouch gTouch;
 nova::WifiManager gWifi;
 nova::StatusClient gStatusClient;
+nova::HttpsPollTask gStatusTransport;
 nova::SentinelModel gModel;
 nova::WifiManagerState gPreviousWifiState = nova::WifiManagerState::StorageError;
 nova::DeviceState gPreviousDeviceState = nova::DeviceState::Starting;
 uint32_t gLastSerialReportAt = 0;
+uint32_t gLastWifiUpdateAt = 0;
+uint32_t gLastTouchPollAt = 0;
+uint32_t gLastStatusDispatchAt = 0;
+uint32_t gLastPresentationUpdateAt = 0;
+uint32_t gTouchPollCount = 0;
 bool gConfigured = false;
 bool gWasTouched = false;
+
+bool cadenceDue(uint32_t nowMs, uint32_t& lastRunAtMs,
+                uint32_t intervalMs) {
+  if (nowMs - lastRunAtMs < intervalMs) {
+    return false;
+  }
+  lastRunAtMs = nowMs;
+  return true;
+}
 
 const char* stateName(nova::DeviceState state) {
   switch (state) {
@@ -93,6 +113,7 @@ nova::WifiConnectionState modelWifiState(nova::WifiManagerState state) {
 }
 
 void updateTouch() {
+  ++gTouchPollCount;
   nova::TouchPoint point{};
   if (!gTouch.read(point)) {
     return;
@@ -115,11 +136,13 @@ void updatePresentation(uint32_t nowMs) {
 
   if (nowMs - gLastSerialReportAt >= kSerialReportIntervalMs) {
     gLastSerialReportAt = nowMs;
-    Serial.printf("[NOVA] VIEW state=%s snapshot=%s age_ms=%lu rssi=%ld heap=%lu\n",
+    Serial.printf("[NOVA] VIEW state=%s snapshot=%s age_ms=%lu rssi=%ld "
+                  "heap=%lu touch_polls=%lu\n",
                   stateName(view.state), view.hasSnapshot ? "yes" : "no",
                   static_cast<unsigned long>(view.snapshotAgeMs),
                   static_cast<long>(gWifi.rssi()),
-                  static_cast<unsigned long>(ESP.getFreeHeap()));
+                  static_cast<unsigned long>(ESP.getFreeHeap()),
+                  static_cast<unsigned long>(gTouchPollCount));
   }
 }
 
@@ -143,13 +166,16 @@ void setup() {
                                             nova::provisioning::kWifiPassword,
                                             nowMs);
   const nova::StatusClientConfig statusConfig{
-      nova::provisioning::kStatusAddress,
       nova::provisioning::kStatusTlsName,
-      nova::provisioning::kStatusPort,
       nova::provisioning::kStatusPath,
-      nova::provisioning::kDeviceToken,
+      nova::provisioning::kDeviceToken};
+  const nova::HttpsPollTaskConfig transportConfig{
+      nova::provisioning::kStatusAddress,
+      nova::provisioning::kStatusPort,
+      nova::provisioning::kStatusTlsName,
       nova::provisioning::kTlsCaPem};
-  const bool statusReady = gStatusClient.begin(statusConfig);
+  const bool statusReady = gStatusClient.begin(statusConfig) &&
+                           gStatusTransport.begin(transportConfig);
   gConfigured = wifiStorageReady && gWifi.hasCredentials() && statusReady;
   gModel.setConfigured(gConfigured, nowMs);
   if (gConfigured) {
@@ -164,25 +190,33 @@ void setup() {
 
 void loop() {
   const uint32_t nowMs = millis();
-  if (gConfigured) {
+  if (gConfigured &&
+      cadenceDue(nowMs, gLastWifiUpdateAt, kWifiUpdateIntervalMs)) {
     gWifi.update(nowMs);
     if (gWifi.state() != gPreviousWifiState) {
       gPreviousWifiState = gWifi.state();
       gModel.setWifiState(modelWifiState(gPreviousWifiState), nowMs);
-      if (!gWifi.connected()) {
-        gStatusClient.cancel();
-      }
     }
+  }
 
+  if (gConfigured &&
+      cadenceDue(nowMs, gLastStatusDispatchAt, kStatusDispatchIntervalMs)) {
     nova::PollOutcome outcome{};
-    if (gStatusClient.update(nowMs, gWifi.connected(), outcome)) {
+    if (gStatusClient.update(nowMs, gWifi.connected(), gStatusTransport,
+                             outcome)) {
       gModel.apply(outcome, nowMs);
     }
   }
 
-  updateTouch();
-  updatePresentation(nowMs);
-  // Yield to the Arduino/FreeRTOS networking tasks while maintaining responsive
-  // touch polling. No hardware or network module depends on this delay.
-  delay(2);
+  if (cadenceDue(nowMs, gLastTouchPollAt, kTouchPollIntervalMs)) {
+    updateTouch();
+  }
+  if (cadenceDue(nowMs, gLastPresentationUpdateAt,
+                 kPresentationUpdateIntervalMs)) {
+    updatePresentation(nowMs);
+  }
+
+  // Give the Arduino runtime an explicit scheduling point without imposing a
+  // fixed sleep or coupling application responsiveness to network latency.
+  yield();
 }

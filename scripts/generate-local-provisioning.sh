@@ -15,6 +15,13 @@ ca_file=$2
 output_file=src/config/Provisioning.h
 temporary_file="${output_file}.tmp"
 
+# A failed certificate read must not leave a partially written header that
+# contains the bearer token. This exact-file cleanup is safe and idempotent.
+cleanup() {
+  rm -f "$temporary_file"
+}
+trap cleanup EXIT HUP INT TERM
+
 test -r "$env_file"
 test -r "$ca_file"
 
@@ -60,4 +67,5 @@ umask 077
 } >"$temporary_file"
 
 mv "$temporary_file" "$output_file"
+trap - EXIT HUP INT TERM
 echo "generated ignored $output_file"

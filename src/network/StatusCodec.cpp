@@ -160,82 +160,11 @@ void configureFilter(StaticJsonDocument<1536>& filter) {
   filter["services"][0]["state"] = true;
 }
 
-}  // namespace
-
-StatusDecoder::StatusDecoder(const HttpResponseMetadata& metadata)
-    : metadata_(metadata) {
-  reset(metadata);
-}
-
-void StatusDecoder::reset(const HttpResponseMetadata& metadata) {
-  metadata_ = metadata;
-  metadata_.contentType[sizeof(metadata_.contentType) - 1] = '\0';
-  received_ = 0;
-  framingError_ = PollError::None;
-  if (metadata_.statusCode == 200) {
-    if (metadata_.contentLength < 0) {
-      framingError_ = PollError::InvalidContract;
-    } else if (metadata_.contentLength >
-               static_cast<int32_t>(kMaxStatusBodyBytes)) {
-      framingError_ = PollError::OversizedBody;
-    } else if (std::strcmp(metadata_.contentType, "application/json") != 0) {
-      framingError_ = PollError::InvalidContract;
-    }
-  }
-}
-
-bool StatusDecoder::append(const uint8_t* data, size_t length) {
-  if (data == nullptr || framingError_ != PollError::None) {
-    return length == 0;
-  }
-  if (length > kMaxStatusBodyBytes - received_) {
-    framingError_ = PollError::OversizedBody;
-    return false;
-  }
-  std::memcpy(body_ + received_, data, length);
-  received_ += length;
-  return true;
-}
-
-PollOutcome StatusDecoder::finish() {
-  if (metadata_.statusCode != 200) {
-    return classifyHttpError();
-  }
-  if (framingError_ != PollError::None) {
-    return PollOutcome::monitorError(framingError_);
-  }
-  if (received_ != static_cast<size_t>(metadata_.contentLength)) {
-    return PollOutcome::monitorError(PollError::InvalidContract);
-  }
-  body_[received_] = '\0';
-
-  StatusSnapshot snapshot{};
-  if (!decodeSnapshot(snapshot)) {
-    return PollOutcome::monitorError(PollError::InvalidContract);
-  }
-  return PollOutcome::accepted(snapshot);
-}
-
-PollOutcome StatusDecoder::classifyHttpError() const {
-  if (metadata_.statusCode == 401 || metadata_.statusCode == 403) {
-    return PollOutcome::monitorError(PollError::Authentication);
-  }
-  if (metadata_.statusCode == 426) {
-    return PollOutcome::monitorError(PollError::UnsupportedSchema);
-  }
-  if (metadata_.statusCode == 429) {
-    return PollOutcome::transientError(PollError::RateLimited);
-  }
-  if (metadata_.statusCode >= 500 && metadata_.statusCode <= 599) {
-    return PollOutcome::transientError(PollError::ServerFailure);
-  }
-  return PollOutcome::monitorError(PollError::UnexpectedHttpStatus);
-}
-
-bool StatusDecoder::decodeSnapshot(StatusSnapshot& snapshot) {
+bool decodeSnapshotBody(const uint8_t* body, size_t length,
+                        StatusSnapshot& snapshot) {
   // Validate the entire body before filtering unknown JSON fields so malformed
   // UTF-8 can never hide inside an extension the current schema ignores.
-  if (!validUtf8(body_, received_)) {
+  if (body == nullptr || !validUtf8(reinterpret_cast<const char*>(body), length)) {
     return false;
   }
   // These fixed workspaces live in static storage because parsing happens on
@@ -247,7 +176,7 @@ bool StatusDecoder::decodeSnapshot(StatusSnapshot& snapshot) {
   document.clear();
   configureFilter(filter);
   const DeserializationError error = deserializeJson(
-      document, body_, DeserializationOption::Filter(filter));
+      document, body, length, DeserializationOption::Filter(filter));
   if (error || !document.is<JsonObject>()) {
     return false;
   }
@@ -273,6 +202,7 @@ bool StatusDecoder::decodeSnapshot(StatusSnapshot& snapshot) {
   if (reasons.size() > kMaxReasons) {
     return false;
   }
+  ReportedSeverity highestReasonSeverity = ReportedSeverity::Healthy;
   for (JsonVariantConst item : reasons) {
     if (!item.is<JsonObjectConst>()) {
       return false;
@@ -284,6 +214,10 @@ bool StatusDecoder::decodeSnapshot(StatusSnapshot& snapshot) {
         !parseReasonSeverity(object["severity"], reason.severity) ||
         !copyBoundedString(object["message"], reason.message)) {
       return false;
+    }
+    if (static_cast<uint8_t>(reason.severity) >
+        static_cast<uint8_t>(highestReasonSeverity)) {
+      highestReasonSeverity = reason.severity;
     }
     ++snapshot.reasonCount;
   }
@@ -329,8 +263,23 @@ bool StatusDecoder::decodeSnapshot(StatusSnapshot& snapshot) {
            std::strcmp(snapshot.summary, "All monitored systems normal") == 0;
   }
   return snapshot.reasonCount > 0 &&
-         snapshot.reasons[0].severity == snapshot.overall &&
+         highestReasonSeverity == snapshot.overall &&
          std::strcmp(snapshot.summary, snapshot.reasons[0].message) == 0;
 }
+
+}  // namespace
+
+namespace detail {
+
+PollError decodeStatusBody(const uint8_t* body, size_t length,
+                           StatusSnapshot& snapshot) {
+  if (length > 4096) {
+    return PollError::OversizedBody;
+  }
+  return decodeSnapshotBody(body, length, snapshot) ? PollError::None
+                                                    : PollError::InvalidContract;
+}
+
+}  // namespace detail
 
 }  // namespace nova

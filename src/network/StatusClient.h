@@ -1,81 +1,84 @@
 #pragma once
 
-#include <WiFiClientSecure.h>
-
 #include <cstddef>
 #include <cstdint>
 
-#include "StatusCodec.h"
+#include "status/StatusSnapshot.h"
 
 namespace nova {
 
+constexpr size_t kMaxHttpsRequestBytes = 512;
+constexpr size_t kMaxRawHttpResponseBytes = 5376;
+
 struct StatusClientConfig {
-  const char* address = nullptr;
   const char* tlsServerName = nullptr;
-  uint16_t port = 0;
   const char* path = nullptr;
   const char* bearerToken = nullptr;
-  const char* caCertificatePem = nullptr;
+};
+
+struct HttpsRequest {
+  char bytes[kMaxHttpsRequestBytes]{};
+  uint16_t length = 0;
+};
+
+enum class HttpsTransportStatus : uint8_t {
+  Complete,
+  Timeout,
+  ConnectFailure,
+  TlsValidationFailure,
+  ResponseTooLarge,
+};
+
+struct HttpsResponseView {
+  HttpsTransportStatus status = HttpsTransportStatus::ConnectFailure;
+  const uint8_t* bytes = nullptr;
+  size_t length = 0;
+};
+
+/** System boundary implemented by the ESP32 HTTPS worker and host test fakes. */
+class StatusTransport {
+ public:
+  virtual ~StatusTransport() = default;
+  virtual bool submit(const HttpsRequest& request) = 0;
+  virtual bool take(HttpsResponseView& response) = 0;
+  virtual void cancel() = 0;
 };
 
 /**
- * Bounded HTTPS polling adapter for StatusDecoder.
+ * Portable status polling state machine.
  *
- * Header/body reads are incremental and capped per update. TLS connect itself
- * is bounded by the secure client's timeout because Arduino's TLS stack does
- * not expose a portable incremental handshake API.
+ * This deep module owns request generation, scheduling, HTTP framing, response
+ * classification, and schema decoding. The injected transport only moves raw
+ * HTTPS bytes and may perform its blocking work on another execution context.
  */
 class StatusClient {
  public:
   bool begin(const StatusClientConfig& config);
   bool configured() const;
 
-  /** Advance at most one bounded unit of work; return true when outcome is set. */
-  bool update(uint32_t nowMs, bool wifiConnected, PollOutcome& outcome);
-  void cancel();
+  /** Perform only fixed-memory, non-blocking work on the caller's thread. */
+  bool update(uint32_t nowMs, bool wifiConnected, StatusTransport& transport,
+              PollOutcome& outcome);
 
  private:
-  enum class State : uint8_t { Idle, StatusLine, Headers, Body };
-
   static constexpr uint32_t kPollIntervalMs = 5000;
-  static constexpr uint32_t kReadTimeoutMs = 3000;
-  static constexpr uint64_t kMinimumTlsEpochSeconds = 1704067200ULL;
-  static constexpr size_t kMaxBytesPerUpdate = 256;
-  static constexpr size_t kMaxHeaderBytes = 1024;
-  static constexpr size_t kMaxLineBytes = 191;
+  static constexpr uint32_t kNoRetryAfter = UINT32_MAX;
+  static constexpr size_t kMaxResponseHeaderBytes = 1024;
+  static constexpr size_t kMaxHeaderLineBytes = 191;
 
-  bool startRequest(uint32_t nowMs, PollOutcome& outcome);
-  bool consumeLineByte(char byte, uint32_t nowMs, PollOutcome& outcome);
-  bool processCompleteLine(uint32_t nowMs, PollOutcome& outcome);
-  bool complete(PollOutcome result, uint32_t nowMs, PollOutcome& outcome);
-  bool fail(PollError error, bool transient, uint32_t nowMs,
-            PollOutcome& outcome);
-  PollError connectFailure();
-  void resetResponse();
+  bool buildRequest(HttpsRequest& request) const;
+  PollOutcome processResponse(const HttpsResponseView& response,
+                              uint32_t& retryAfterMs) const;
 
-  WiFiClientSecure tls_;
-  StatusDecoder decoder_;
-  HttpResponseMetadata metadata_{};
-  char address_[96]{};
   char tlsServerName_[96]{};
   char path_[65]{};
   char token_[129]{};
-  const char* caCertificatePem_ = nullptr;
-  uint16_t port_ = 0;
-  char line_[kMaxLineBytes + 1]{};
-  size_t lineLength_ = 0;
-  size_t headerBytes_ = 0;
-  size_t bodyBytes_ = 0;
-  uint32_t phaseActivityAtMs_ = 0;
   uint32_t completedAtMs_ = 0;
   uint32_t waitDurationMs_ = 0;
-  uint32_t retryAfterMs_ = 0;
-  State state_ = State::Idle;
   bool configured_ = false;
+  bool inFlight_ = false;
   bool waiting_ = false;
-  bool timeSyncRequested_ = false;
-  bool contentLengthSeen_ = false;
-  bool contentTypeSeen_ = false;
+  bool wifiWasConnected_ = false;
 };
 
 }  // namespace nova
