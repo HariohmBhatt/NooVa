@@ -157,6 +157,10 @@ void test_count_string_identifier_and_utf8_bounds_are_enforced() {
   std::string embeddedNull = kValidJson;
   embeddedNull.insert(embeddedNull.find("\"services\""), 1, '\0');
   TEST_ASSERT_EQUAL(nova::PollError::InvalidContract, decode(embeddedNull).error);
+
+  std::string escapedNull = kValidJson;
+  replaceOne(escapedNull, "\"name\":\"Hub\"", "\"name\":\"Hu\\u0000b\"");
+  TEST_ASSERT_EQUAL(nova::PollError::InvalidContract, decode(escapedNull).error);
 }
 
 void test_cross_field_invariants_and_unique_service_ids_are_enforced() {
@@ -174,6 +178,11 @@ void test_cross_field_invariants_and_unique_service_ids_are_enforced() {
   replaceOne(summaryMismatch, "\"summary\":\"System disk is 82% full\"",
              "\"summary\":\"Different\"");
   TEST_ASSERT_EQUAL(nova::PollError::InvalidContract, decode(summaryMismatch).error);
+
+  std::string severityMismatch = kValidJson;
+  replaceOne(severityMismatch, "\"severity\":\"warning\"",
+             "\"severity\":\"critical\"");
+  TEST_ASSERT_EQUAL(nova::PollError::InvalidContract, decode(severityMismatch).error);
 
   std::string duplicateIds = kValidJson;
   replaceOne(duplicateIds, "\"id\":\"backup\"", "\"id\":\"hub\"");

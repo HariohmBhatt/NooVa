@@ -58,8 +58,9 @@ bool copyBoundedString(JsonVariantConst source, char (&destination)[Capacity]) {
   if (!source.is<const char*>()) {
     return false;
   }
-  const char* value = source.as<const char*>();
-  const size_t length = std::strlen(value);
+  const JsonString string = source.as<JsonString>();
+  const char* value = string.c_str();
+  const size_t length = string.size();
   if (length == 0 || length >= Capacity || !validUtf8(value, length)) {
     return false;
   }
@@ -328,6 +329,7 @@ bool StatusDecoder::decodeSnapshot(StatusSnapshot& snapshot) {
            std::strcmp(snapshot.summary, "All monitored systems normal") == 0;
   }
   return snapshot.reasonCount > 0 &&
+         snapshot.reasons[0].severity == snapshot.overall &&
          std::strcmp(snapshot.summary, snapshot.reasons[0].message) == 0;
 }
 
