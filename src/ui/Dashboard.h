@@ -31,10 +31,12 @@ class Dashboard {
   void createHome();
   void createDetails();
   void showPage(Page page);
-  void render(const DeviceView& view, uint32_t ageSeconds);
+  void render(const DeviceView& view);
   void renderHeader(lv_obj_t* freshness, lv_obj_t* band,
-                    const DeviceView& view, uint32_t ageSeconds);
+                    const DeviceView& view);
+  void renderConnectionLayers(const DashboardContent& content);
   void renderMetrics(const DeviceView& view);
+  void renderServices(const DeviceView& view);
   void applyTone(UiTone tone);
 
   BoardDisplay* display_ = nullptr;
@@ -49,6 +51,7 @@ class Dashboard {
   lv_obj_t* homeBand_ = nullptr;
   lv_obj_t* homeGlyph_ = nullptr;
   lv_obj_t* homeStaleArc_ = nullptr;
+  lv_obj_t* homeStaleArrow_ = nullptr;
   lv_obj_t* homeTitle_ = nullptr;
   lv_obj_t* homeSummary_ = nullptr;
   lv_obj_t* metrics_ = nullptr;
@@ -60,9 +63,11 @@ class Dashboard {
   lv_obj_t* pathStates_[3]{};
   lv_obj_t* pathGlyphs_[3]{};
   lv_obj_t* services_ = nullptr;
+  lv_obj_t* serviceTiles_[kMaxServices]{};
   lv_obj_t* serviceGlyphs_[kMaxServices]{};
   lv_obj_t* serviceNames_[kMaxServices]{};
   lv_obj_t* serviceCount_ = nullptr;
+  lv_obj_t* serviceEmpty_ = nullptr;
 
   lv_obj_t* details_ = nullptr;
   lv_obj_t* detailsFreshness_ = nullptr;
@@ -70,14 +75,25 @@ class Dashboard {
   lv_obj_t* detailsScroll_ = nullptr;
   lv_obj_t* detailsTitle_ = nullptr;
   lv_obj_t* detailsSummary_ = nullptr;
+  lv_obj_t* detailsPathNames_[3]{};
+  lv_obj_t* detailsPathStates_[3]{};
+  lv_obj_t* detailsPathGlyphs_[3]{};
+  lv_obj_t* detailsUptime_ = nullptr;
+  lv_obj_t* detailsAccepted_ = nullptr;
+  lv_obj_t* detailsMetricsHeading_ = nullptr;
   lv_obj_t* detailsMetrics_[3]{};
+  lv_obj_t* detailsReasonsHeading_ = nullptr;
   lv_obj_t* detailReasons_[kMaxReasons]{};
+  lv_obj_t* detailsServicesHeading_ = nullptr;
   lv_obj_t* detailServices_[kMaxServices]{};
+  lv_obj_t* detailsEnd_ = nullptr;
 
   DeviceState renderedState_ = DeviceState::Starting;
-  uint32_t renderedSequence_ = UINT32_MAX;
+  PollError renderedMonitorError_ = PollError::None;
+  StatusSnapshot renderedSnapshotValue_{};
   uint32_t renderedAgeSeconds_ = UINT32_MAX;
   bool renderedSnapshot_ = false;
+  bool renderedLastKnown_ = false;
   bool ready_ = false;
   Page page_ = Page::Home;
 };

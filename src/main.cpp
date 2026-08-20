@@ -13,7 +13,6 @@
 #include "network/WifiManager.h"
 #include "status/SentinelModel.h"
 #include "ui/Dashboard.h"
-#include "ui/DashboardPresenter.h"
 
 namespace {
 
@@ -64,18 +63,19 @@ nova::WifiConnectionState modelWifiState(nova::WifiManagerState state) {
 
 void updatePresentation(uint32_t nowMs) {
   const nova::DeviceView view = gModel.view(nowMs);
-  const nova::DashboardContent content = nova::DashboardPresenter::present(view);
   if (view.state != gPreviousDeviceState) {
     gPreviousDeviceState = view.state;
-    Serial.printf("[NOVA] STATE=%s\n", content.title);
+    Serial.printf("[NOVA] STATE_ID=%u\n",
+                  static_cast<unsigned>(view.state));
   }
   gDashboard.update(view, nowMs);
 
   if (nowMs - gLastSerialReportAt >= kSerialReportIntervalMs) {
     gLastSerialReportAt = nowMs;
-    Serial.printf("[NOVA] VIEW state=%s snapshot=%s age_ms=%lu rssi=%ld "
+    Serial.printf("[NOVA] VIEW state_id=%u snapshot=%s age_ms=%lu rssi=%ld "
                   "heap=%lu ui_loops=%lu\n",
-                  content.title, view.hasSnapshot ? "yes" : "no",
+                  static_cast<unsigned>(view.state),
+                  view.hasSnapshot ? "yes" : "no",
                   static_cast<unsigned long>(view.snapshotAgeMs),
                   static_cast<long>(gWifi.rssi()),
                   static_cast<unsigned long>(ESP.getFreeHeap()),
