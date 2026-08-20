@@ -4,31 +4,39 @@ Date: 2026-08-20 UTC
 
 ## Exact firmware revision
 
-The final code commit flashed to `/dev/ttyACM0` was
-`f8a91d8` (`fix(ui): retain metrics in diagnostic states`), on top of
-`bf330e9` (`feat(firmware): add LVGL sentinel dashboard`). Both were pushed to
-`origin/refactor/clean-foundation` before upload. Unrelated local `README.md`
-and `.agents/` changes were not committed.
+The latest code commit flashed to `/dev/ttyACM0` was `f84268e`
+(`fix(ui): harden dashboard status semantics`). It is the focused cleanup of
+the production dashboard added in `bf330e9` and corrected in `f8a91d8`.
+`f84268e` was pushed to `origin/refactor/clean-foundation` before upload.
+Unrelated local `README.md` and `.agents/` changes were not committed.
 
 ## Automated evidence
 
-- `pio test -e native`: 24/24 passed, including the new public
-  `DashboardPresenter` tests.
-- `pio run -e waveshare-esp32-s3-touch-lcd-35`: passed.
+- `pio test -e native`: 24/24 passed, including freshness, nullable metric,
+  uptime, connection-copy, and service presentation assertions.
+- Clean `pio run -e waveshare-esp32-s3-touch-lcd-35`: passed.
 - `git diff --check`: passed before the code commit.
-- Release size: 158,376 / 327,680 bytes RAM (48.3%); 1,215,777 /
-  6,553,600 bytes flash (18.5%).
+- `pio check -e waveshare-esp32-s3-touch-lcd-35 --fail-on-defect high`:
+  passed its high-severity threshold. Reported medium/low findings were in
+  pinned third-party display/touch libraries, plus false unused-function
+  reports at hardware adapter boundaries; none were in the changed UI files.
+- The Variant D web symbol audit passed all 11 fixtures on Home and Details
+  (22 combinations). This revalidates the design reference, not LVGL pixels.
+- Release size: 159,176 / 327,680 bytes RAM (48.6%); 1,219,017 /
+  6,553,600 bytes flash (18.6%). Relative to `f8a91d8`, the cleanup adds 800
+  bytes of static RAM and 3,240 bytes of flash.
 - Upload identified ESP32-S3 revision 0.2, 16 MB flash and 8 MB embedded PSRAM;
   image hashes verified successfully.
 
 ## Connected-device evidence
 
-The exact code commit uploaded successfully. A subsequent serial capture showed
-the real backend repeatedly producing `Healthy` with authenticated snapshots,
-RSSI between -24 and -25 dBm, UI processing near its intended 200 Hz cadence,
-and free heap returning to 176,384 bytes between TLS transactions. During TLS
-work, observed heap remained above 132,520 bytes. No reset, panic, watchdog, or
-LVGL allocation assertion appeared in the capture.
+The exact `f84268e` image uploaded successfully with verified image hashes to
+the ESP32-S3 revision 0.2, 16 MB flash, 8 MB PSRAM board. A subsequent serial
+capture showed device state ID 5 (`healthy`) with authenticated snapshots,
+RSSI between -24 and -26 dBm, and UI processing near its intended 200 Hz
+cadence. Free heap returned to 175,328 bytes between TLS transactions; the
+lowest observed transient value was 131,620 bytes. No reset, panic, watchdog,
+or LVGL allocation assertion appeared in the capture.
 
 ## Honest pending checks
 
