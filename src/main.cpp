@@ -12,22 +12,18 @@
 #include "network/StatusClient.h"
 #include "network/WifiManager.h"
 #include "status/SentinelModel.h"
+#include "ui/Dashboard.h"
+#include "ui/DashboardPresenter.h"
 
 namespace {
 
 constexpr uint32_t kSerialBaud = 115200;
 constexpr uint32_t kWifiUpdateIntervalMs = 20;
-constexpr uint32_t kTouchPollIntervalMs = 20;
 constexpr uint32_t kStatusDispatchIntervalMs = 5;
 constexpr uint32_t kPresentationUpdateIntervalMs = 100;
+constexpr uint32_t kUiProcessIntervalMs = 5;
 constexpr uint32_t kSerialReportIntervalMs = 1000;
 constexpr TickType_t kIdleSchedulerWaitTicks = 1;
-constexpr uint16_t kColorStarting = 0x0861;
-constexpr uint16_t kColorHealthy = 0x0328;
-constexpr uint16_t kColorWarning = 0xB420;
-constexpr uint16_t kColorCritical = 0x7800;
-constexpr uint16_t kColorOffline = 0x2104;
-constexpr uint16_t kColorMonitorError = 0x500F;
 
 nova::BoardDisplay gDisplay;
 nova::BoardTouch gTouch;
@@ -35,16 +31,16 @@ nova::WifiManager gWifi;
 nova::StatusClient gStatusClient;
 nova::HttpsPollTask gStatusTransport;
 nova::SentinelModel gModel;
+nova::Dashboard gDashboard;
 nova::WifiManagerState gPreviousWifiState = nova::WifiManagerState::StorageError;
 nova::DeviceState gPreviousDeviceState = nova::DeviceState::Starting;
 uint32_t gLastSerialReportAt = 0;
 uint32_t gLastWifiUpdateAt = 0;
-uint32_t gLastTouchPollAt = 0;
 uint32_t gLastStatusDispatchAt = 0;
 uint32_t gLastPresentationUpdateAt = 0;
-uint32_t gTouchPollCount = 0;
+uint32_t gLastUiProcessAt = 0;
+uint32_t gUiProcessCount = 0;
 bool gConfigured = false;
-bool gWasTouched = false;
 
 bool cadenceDue(uint32_t nowMs, uint32_t& lastRunAtMs,
                 uint32_t intervalMs) {
@@ -53,53 +49,6 @@ bool cadenceDue(uint32_t nowMs, uint32_t& lastRunAtMs,
   }
   lastRunAtMs = nowMs;
   return true;
-}
-
-const char* stateName(nova::DeviceState state) {
-  switch (state) {
-    case nova::DeviceState::Starting:
-      return "starting";
-    case nova::DeviceState::SetupRequired:
-      return "setup_required";
-    case nova::DeviceState::WifiConnecting:
-      return "wifi_connecting";
-    case nova::DeviceState::WifiOffline:
-      return "wifi_offline";
-    case nova::DeviceState::ServerConnecting:
-      return "server_connecting";
-    case nova::DeviceState::Healthy:
-      return "healthy";
-    case nova::DeviceState::Warning:
-      return "warning";
-    case nova::DeviceState::Critical:
-      return "critical";
-    case nova::DeviceState::Stale:
-      return "stale";
-    case nova::DeviceState::ServerOffline:
-      return "server_offline";
-    case nova::DeviceState::MonitorError:
-      return "monitor_error";
-  }
-  return "unknown";
-}
-
-uint16_t stateColor(nova::DeviceState state) {
-  switch (state) {
-    case nova::DeviceState::Healthy:
-      return kColorHealthy;
-    case nova::DeviceState::Warning:
-    case nova::DeviceState::Stale:
-      return kColorWarning;
-    case nova::DeviceState::Critical:
-      return kColorCritical;
-    case nova::DeviceState::MonitorError:
-      return kColorMonitorError;
-    case nova::DeviceState::WifiOffline:
-    case nova::DeviceState::ServerOffline:
-      return kColorOffline;
-    default:
-      return kColorStarting;
-  }
 }
 
 nova::WifiConnectionState modelWifiState(nova::WifiManagerState state) {
@@ -113,37 +62,24 @@ nova::WifiConnectionState modelWifiState(nova::WifiManagerState state) {
   }
 }
 
-void updateTouch() {
-  ++gTouchPollCount;
-  nova::TouchPoint point{};
-  if (!gTouch.read(point)) {
-    return;
-  }
-  if (point.pressed && !gWasTouched) {
-    Serial.printf("[NOVA] TOUCH press x=%d y=%d\n", point.x, point.y);
-  } else if (!point.pressed && gWasTouched) {
-    Serial.println("[NOVA] TOUCH release");
-  }
-  gWasTouched = point.pressed;
-}
-
 void updatePresentation(uint32_t nowMs) {
   const nova::DeviceView view = gModel.view(nowMs);
+  const nova::DashboardContent content = nova::DashboardPresenter::present(view);
   if (view.state != gPreviousDeviceState) {
     gPreviousDeviceState = view.state;
-    gDisplay.clear(stateColor(view.state));
-    Serial.printf("[NOVA] STATE=%s\n", stateName(view.state));
+    Serial.printf("[NOVA] STATE=%s\n", content.title);
   }
+  gDashboard.update(view, nowMs);
 
   if (nowMs - gLastSerialReportAt >= kSerialReportIntervalMs) {
     gLastSerialReportAt = nowMs;
     Serial.printf("[NOVA] VIEW state=%s snapshot=%s age_ms=%lu rssi=%ld "
-                  "heap=%lu touch_polls=%lu\n",
-                  stateName(view.state), view.hasSnapshot ? "yes" : "no",
+                  "heap=%lu ui_loops=%lu\n",
+                  content.title, view.hasSnapshot ? "yes" : "no",
                   static_cast<unsigned long>(view.snapshotAgeMs),
                   static_cast<long>(gWifi.rssi()),
                   static_cast<unsigned long>(ESP.getFreeHeap()),
-                  static_cast<unsigned long>(gTouchPollCount));
+                  static_cast<unsigned long>(gUiProcessCount));
   }
 }
 
@@ -159,9 +95,11 @@ void setup() {
 
   const bool displayReady = gDisplay.begin();
   const bool touchReady = displayReady && gTouch.begin();
+  const bool dashboardReady = displayReady && gDashboard.begin(gDisplay, gTouch);
   Serial.printf("[NOVA] DISPLAY=%s geometry=%ux%u TOUCH=%s\n",
                 displayReady ? "ready" : "failed", gDisplay.width(),
                 gDisplay.height(), touchReady ? "ready" : "failed");
+  Serial.printf("[NOVA] UI=%s\n", dashboardReady ? "ready" : "failed");
 
   const bool wifiStorageReady = gWifi.begin(nova::provisioning::kWifiSsid,
                                             nova::provisioning::kWifiPassword,
@@ -209,8 +147,9 @@ void loop() {
     }
   }
 
-  if (cadenceDue(nowMs, gLastTouchPollAt, kTouchPollIntervalMs)) {
-    updateTouch();
+  if (cadenceDue(nowMs, gLastUiProcessAt, kUiProcessIntervalMs)) {
+    ++gUiProcessCount;
+    gDashboard.process();
   }
   if (cadenceDue(nowMs, gLastPresentationUpdateAt,
                  kPresentationUpdateIntervalMs)) {
