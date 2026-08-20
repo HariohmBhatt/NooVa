@@ -41,7 +41,10 @@ class LinuxObserver:
                 (self._proc_root / "stat").read_text(encoding="ascii").splitlines()[0].split()
             )
             values = [int(value) for value in fields[1:]]
-            total = sum(values)
+            # Linux includes guest time inside user/nice and repeats it in the
+            # final guest fields. Only the first eight counters belong in the
+            # total, otherwise virtual-machine workloads are counted twice.
+            total = sum(values[:8])
             idle = values[3] + (values[4] if len(values) > 4 else 0)
             previous = self._previous_cpu
             self._previous_cpu = (total, idle)
@@ -106,9 +109,9 @@ class HttpProbeClient:
             # into a different endpoint and accidentally report that endpoint.
             opener = urllib.request.build_opener(_NoRedirectHandler())
             with opener.open(request, timeout=service.timeout_seconds) as response:
-                return 200 <= response.status < 400
+                return 200 <= int(response.status) < 400
         except urllib.error.HTTPError as error:
-            return 200 <= error.code < 400
+            return 200 <= int(error.code) < 400
         except (OSError, ValueError):
             return False
 

@@ -36,10 +36,10 @@ class ScriptedObserver:
 
 
 class ScriptedProbes:
-    def __init__(self, results: dict[str, list[bool | None]]) -> None:
+    def __init__(self, results: dict[str, list[bool]]) -> None:
         self.results = results
 
-    def check(self, service: ServiceDefinition) -> bool | None:
+    def check(self, service: ServiceDefinition) -> bool:
         return self.results[service.id].pop(0)
 
 

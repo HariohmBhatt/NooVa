@@ -16,7 +16,7 @@ class Observer(Protocol):
 
 
 class ProbeClient(Protocol):
-    def check(self, service: ServiceDefinition) -> bool | None: ...
+    def check(self, service: ServiceDefinition) -> bool: ...
 
 
 class Clock(Protocol):
@@ -64,7 +64,7 @@ class _ServiceMemory:
     failures: int = 0
     successes: int = 0
 
-    def update(self, healthy: bool | None, importance: str) -> ServiceState:
+    def update(self, healthy: bool, importance: str) -> ServiceState:
         if healthy:
             self.successes += 1
             self.failures = 0
@@ -150,7 +150,7 @@ class StatusMonitor:
         self._sequence = (self._sequence + 1) & 0xFFFFFFFF
         return snapshot
 
-    def _run_probes(self) -> dict[str, bool | None]:
+    def _run_probes(self) -> dict[str, bool]:
         if not self._services:
             return {}
         with ThreadPoolExecutor(
@@ -160,7 +160,7 @@ class StatusMonitor:
                 service.id: pool.submit(self._probes.check, service)
                 for service in self._services
             }
-            results: dict[str, bool | None] = {}
+            results: dict[str, bool] = {}
             for service in self._services:
                 try:
                     results[service.id] = futures[service.id].result()
@@ -170,7 +170,7 @@ class StatusMonitor:
             return results
 
     def _evaluate(
-        self, observation: HostObservation, probe_results: dict[str, bool | None]
+        self, observation: HostObservation, probe_results: dict[str, bool]
     ) -> StatusSnapshot:
         reasons: list[tuple[Reason, str]] = []
         reasons.extend(self._metric_reasons("cpu", observation.cpu_percent_tenths))

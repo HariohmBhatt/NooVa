@@ -15,13 +15,15 @@ def test_linux_observer_reads_normalized_values_from_fixture_mounts(tmp_path: Pa
     proc = tmp_path / "proc"
     disk = tmp_path / "disk"
     disk.mkdir()
-    _write(proc / "stat", "cpu  100 0 100 800 0 0 0 0 0 0\n")
+    # Guest counters are already included in user/nice and must not inflate the
+    # total used to calculate CPU utilization.
+    _write(proc / "stat", "cpu  100 0 100 800 0 0 0 0 500 500\n")
     _write(proc / "meminfo", "MemTotal: 1000 kB\nMemAvailable: 400 kB\n")
     _write(proc / "uptime", "48210.75 100.0\n")
     observer = LinuxObserver(proc, disk)
 
     first = observer.collect()
-    _write(proc / "stat", "cpu  130 0 120 850 0 0 0 0 0 0\n")
+    _write(proc / "stat", "cpu  130 0 120 850 0 0 0 0 900 900\n")
     second = observer.collect()
 
     assert first.cpu_percent_tenths == 200
