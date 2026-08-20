@@ -4,10 +4,11 @@ Date: 2026-08-20 UTC
 
 ## Exact firmware revision
 
-The code commit flashed to `/dev/ttyACM0` was
-`bf330e9f9f55acdd754c37b5cb39d1d757b128f7` (`feat(firmware): add LVGL
-sentinel dashboard`). It was pushed to `origin/refactor/clean-foundation` before
-upload. Unrelated local `README.md` and `.agents/` changes were not committed.
+The final code commit flashed to `/dev/ttyACM0` was
+`f8a91d8` (`fix(ui): retain metrics in diagnostic states`), on top of
+`bf330e9` (`feat(firmware): add LVGL sentinel dashboard`). Both were pushed to
+`origin/refactor/clean-foundation` before upload. Unrelated local `README.md`
+and `.agents/` changes were not committed.
 
 ## Automated evidence
 
@@ -15,7 +16,7 @@ upload. Unrelated local `README.md` and `.agents/` changes were not committed.
   `DashboardPresenter` tests.
 - `pio run -e waveshare-esp32-s3-touch-lcd-35`: passed.
 - `git diff --check`: passed before the code commit.
-- Release size: 158,376 / 327,680 bytes RAM (48.3%); 1,215,581 /
+- Release size: 158,376 / 327,680 bytes RAM (48.3%); 1,215,777 /
   6,553,600 bytes flash (18.5%).
 - Upload identified ESP32-S3 revision 0.2, 16 MB flash and 8 MB embedded PSRAM;
   image hashes verified successfully.
