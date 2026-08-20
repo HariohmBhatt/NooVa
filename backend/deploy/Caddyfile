@@ -1,0 +1,28 @@
+{
+	admin off
+	auto_https disable_redirects
+	skip_install_trust
+	servers {
+		protocols h1 h2
+	}
+}
+
+https://{$NOVA_PUBLIC_HOST:nova-sentinel.local} {
+	tls internal
+
+	@sentinel path /v1/status /healthz
+	handle @sentinel {
+		reverse_proxy sentinel-api:8000
+	}
+
+	handle {
+		respond "Not found" 404
+	}
+
+	header -Server
+}
+
+# Container-local liveness avoids weakening the public TLS listener.
+http://127.0.0.1:8080 {
+	reverse_proxy /healthz sentinel-api:8000
+}
