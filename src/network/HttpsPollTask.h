@@ -68,6 +68,8 @@ class HttpsPollTask final : public StatusTransport {
   StaticTask_t taskControl_{};
   uint8_t commandQueueStorage_[sizeof(WorkerCommand)]{};
   uint8_t resultQueueStorage_[sizeof(WorkerResult)]{};
+  static_assert(kTaskStackBytes % sizeof(StackType_t) == 0,
+                "HTTPS task stack must contain whole StackType_t entries");
   StackType_t taskStack_[kTaskStackBytes / sizeof(StackType_t)]{};
   uint8_t responseBytes_[kMaxRawHttpResponseBytes]{};
   char address_[96]{};

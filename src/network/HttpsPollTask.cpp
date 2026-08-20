@@ -52,9 +52,10 @@ bool HttpsPollTask::begin(const HttpsPollTaskConfig& config) {
     return false;
   }
 
+  // ESP-IDF measures this argument in bytes, unlike upstream FreeRTOS.
   taskHandle_ = xTaskCreateStaticPinnedToCore(
-      taskEntry, "nova_https", sizeof(taskStack_) / sizeof(StackType_t), this,
-      kTaskPriority, taskStack_, &taskControl_, kTaskCore);
+      taskEntry, "nova_https", kTaskStackBytes, this, kTaskPriority, taskStack_,
+      &taskControl_, kTaskCore);
   ready_ = taskHandle_ != nullptr;
   return ready_;
 }

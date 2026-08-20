@@ -216,7 +216,7 @@ void loop() {
     updatePresentation(nowMs);
   }
 
-  // Give the Arduino runtime an explicit scheduling point without imposing a
-  // fixed sleep or coupling application responsiveness to network latency.
-  yield();
+  // Block for one scheduler tick so lower-priority idle work can run. The
+  // shortest application cadence is still five times longer than this pause.
+  delay(1);
 }
