@@ -149,7 +149,8 @@ void Dashboard::createHome() {
   lv_obj_set_pos(metrics_, 14, 194); lv_obj_set_size(metrics_, 292, 108);
   const char* metricNames[] = {"CPU", "MEMORY", "DISK"};
   for (uint8_t i = 0; i < 3; ++i) {
-    label(metrics_, metricNames[i], 12, 8 + i * 32, 74, &lv_font_montserrat_12, kMuted);
+    metricNames_[i] = label(metrics_, metricNames[i], 12, 8 + i * 32, 74,
+                            &lv_font_montserrat_12, kMuted);
     metricValues_[i] = label(metrics_, "Unavailable", 150, 8 + i * 32, 126,
                              &lv_font_montserrat_12);
     lv_obj_set_style_text_align(metricValues_[i], LV_TEXT_ALIGN_RIGHT, 0);
@@ -260,8 +261,27 @@ void Dashboard::render(const DeviceView& view, uint32_t ageSeconds) {
   const char* summary = view.hasSnapshot && view.snapshot.summary[0] != '\0' && !content.diagnostic ? view.snapshot.summary : content.fallbackSummary;
   lv_label_set_text(homeSummary_, summary); lv_label_set_text(detailsSummary_, summary);
   applyTone(content.tone); renderMetrics(view);
-  if (content.diagnostic) { lv_obj_clear_flag(path_, LV_OBJ_FLAG_HIDDEN); lv_obj_add_flag(metrics_, LV_OBJ_FLAG_HIDDEN); }
-  else { lv_obj_add_flag(path_, LV_OBJ_FLAG_HIDDEN); lv_obj_clear_flag(metrics_, LV_OBJ_FLAG_HIDDEN); }
+  if (content.diagnostic) {
+    lv_obj_clear_flag(path_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(metrics_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_pos(metrics_, 16, 276); lv_obj_set_size(metrics_, 288, 42);
+    lv_obj_set_pos(services_, 16, 326);
+    for (uint8_t i = 0; i < 3; ++i) {
+      lv_obj_set_pos(metricNames_[i], i * 96 + 6, 5); lv_obj_set_width(metricNames_[i], 38);
+      lv_obj_set_pos(metricValues_[i], i * 96 + 40, 5); lv_obj_set_width(metricValues_[i], 52);
+      lv_obj_add_flag(metricBars_[i], LV_OBJ_FLAG_HIDDEN);
+    }
+  } else {
+    lv_obj_add_flag(path_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(metrics_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_pos(metrics_, 14, 194); lv_obj_set_size(metrics_, 292, 108);
+    lv_obj_set_pos(services_, 16, 310);
+    for (uint8_t i = 0; i < 3; ++i) {
+      lv_obj_set_pos(metricNames_[i], 12, 8 + i * 32); lv_obj_set_width(metricNames_[i], 74);
+      lv_obj_set_pos(metricValues_[i], 150, 8 + i * 32); lv_obj_set_width(metricValues_[i], 126);
+      lv_obj_clear_flag(metricBars_[i], LV_OBJ_FLAG_HIDDEN);
+    }
+  }
   for (uint8_t i = 0; i < 3; ++i) { lv_label_set_text(pathNames_[i], content.layers[i].name); lv_label_set_text(pathStates_[i], content.layers[i].status); lv_label_set_text(pathGlyphs_[i], content.layers[i].glyph); }
   char count[24]{};
   if (view.lastKnown) std::snprintf(count, sizeof(count), "LAST KNOWN");

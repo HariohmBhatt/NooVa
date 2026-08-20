@@ -52,6 +52,7 @@ class Dashboard {
   lv_obj_t* homeTitle_ = nullptr;
   lv_obj_t* homeSummary_ = nullptr;
   lv_obj_t* metrics_ = nullptr;
+  lv_obj_t* metricNames_[3]{};
   lv_obj_t* metricValues_[3]{};
   lv_obj_t* metricBars_[3]{};
   lv_obj_t* path_ = nullptr;
