@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NOVA Sentinel UI Prototype</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- PROTOTYPE ONLY: four 320x480 variants, switched with ?variant=A/B/C/D. -->
+    <main class="prototype-stage">
+      <section id="device" class="device" aria-label="NOVA Sentinel 320 by 480 display"></section>
+    </main>
+
+    <nav class="prototype-switcher" aria-label="Prototype controls">
+      <button id="previous-variant" class="round-control" aria-label="Previous variant">‹</button>
+      <div class="variant-label" id="variant-label">A — Beacon</div>
+      <button id="next-variant" class="round-control" aria-label="Next variant">›</button>
+      <span class="control-divider" aria-hidden="true"></span>
+      <button id="previous-fixture" class="small-control" aria-label="Previous device state">−</button>
+      <label class="fixture-control">
+        <span class="sr-only">Device state</span>
+        <select id="fixture-select"></select>
+      </label>
+      <button id="next-fixture" class="small-control" aria-label="Next device state">+</button>
+      <button id="page-toggle" class="page-control">Details</button>
+    </nav>
+
+    <script src="app.js"></script>
+  </body>
+</html>
