@@ -8,6 +8,7 @@
 namespace nova {
 
 constexpr size_t kMaxHttpsRequestBytes = 512;
+constexpr size_t kMaxHttpsResponseChunkBytes = 256;
 constexpr size_t kMaxRawHttpResponseBytes = 5376;
 
 struct StatusClientConfig {
@@ -21,16 +22,17 @@ struct HttpsRequest {
   uint16_t length = 0;
 };
 
-enum class HttpsTransportStatus : uint8_t {
-  Complete,
+enum class HttpsTransportEventType : uint8_t {
+  ResponseBytes,
+  ResponseComplete,
   Timeout,
   ConnectFailure,
   TlsValidationFailure,
   ResponseTooLarge,
 };
 
-struct HttpsResponseView {
-  HttpsTransportStatus status = HttpsTransportStatus::ConnectFailure;
+struct HttpsTransportEvent {
+  HttpsTransportEventType type = HttpsTransportEventType::ConnectFailure;
   const uint8_t* bytes = nullptr;
   size_t length = 0;
 };
@@ -40,7 +42,7 @@ class StatusTransport {
  public:
   virtual ~StatusTransport() = default;
   virtual bool submit(const HttpsRequest& request) = 0;
-  virtual bool take(HttpsResponseView& response) = 0;
+  virtual bool take(HttpsTransportEvent& event) = 0;
   virtual void cancel() = 0;
 };
 
@@ -67,12 +69,15 @@ class StatusClient {
   static constexpr size_t kMaxHeaderLineBytes = 191;
 
   bool buildRequest(HttpsRequest& request) const;
-  PollOutcome processResponse(const HttpsResponseView& response,
-                              uint32_t& retryAfterMs) const;
+  PollOutcome processResponse(uint32_t& retryAfterMs) const;
+  bool complete(PollOutcome result, uint32_t retryAfterMs, uint32_t nowMs,
+                PollOutcome& outcome);
 
   char tlsServerName_[96]{};
   char path_[65]{};
   char token_[129]{};
+  uint8_t responseBytes_[kMaxRawHttpResponseBytes]{};
+  size_t responseLength_ = 0;
   uint32_t completedAtMs_ = 0;
   uint32_t waitDurationMs_ = 0;
   bool configured_ = false;

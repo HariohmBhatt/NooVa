@@ -29,8 +29,11 @@ class HttpsPollTask final : public StatusTransport {
   bool begin(const HttpsPollTaskConfig& config);
 
   bool submit(const HttpsRequest& request) override;
-  bool take(HttpsResponseView& response) override;
+  bool take(HttpsTransportEvent& event) override;
   void cancel() override;
+
+  /** Minimum unused worker stack observed by FreeRTOS, in ESP-IDF bytes. */
+  uint32_t stackHeadroomBytes() const;
 
  private:
   struct WorkerCommand {
@@ -39,7 +42,7 @@ class HttpsPollTask final : public StatusTransport {
   };
 
   struct WorkerResult {
-    HttpsTransportStatus status = HttpsTransportStatus::ConnectFailure;
+    HttpsTransportEventType type = HttpsTransportEventType::ConnectFailure;
     uint32_t generation = 0;
     uint16_t length = 0;
   };
@@ -48,6 +51,8 @@ class HttpsPollTask final : public StatusTransport {
   static constexpr uint32_t kTransactionDeadlineMs = 4500;
   static constexpr uint32_t kTlsHandshakeTimeoutSeconds = 3;
   static constexpr uint32_t kSocketTimeoutSeconds = 3;
+  static constexpr TickType_t kSocketWaitTicks = 1;
+  static constexpr TickType_t kClockWaitTicks = pdMS_TO_TICKS(10);
   static constexpr uint32_t kTaskStackBytes = 12288;
   static constexpr UBaseType_t kTaskPriority = 1;
   static constexpr BaseType_t kTaskCore = 0;
@@ -55,7 +60,7 @@ class HttpsPollTask final : public StatusTransport {
   static void taskEntry(void* context);
   void run();
   WorkerResult perform(const WorkerCommand& command);
-  HttpsTransportStatus connect();
+  HttpsTransportEventType connect();
   PollError connectError();
   uint32_t generation();
 
@@ -78,7 +83,10 @@ class HttpsPollTask final : public StatusTransport {
   uint16_t port_ = 0;
   portMUX_TYPE generationMux_ = portMUX_INITIALIZER_UNLOCKED;
   uint32_t generation_ = 1;
+  size_t deliveryOffset_ = 0;
+  size_t deliveryLength_ = 0;
   bool timeSyncRequested_ = false;
+  bool deliveryActive_ = false;
   bool ready_ = false;
 };
 

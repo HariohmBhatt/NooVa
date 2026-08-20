@@ -111,6 +111,7 @@ bool StatusClient::update(uint32_t nowMs, bool wifiConnected,
     wifiWasConnected_ = false;
     inFlight_ = false;
     waiting_ = false;
+    responseLength_ = 0;
     return false;
   }
 
@@ -120,20 +121,49 @@ bool StatusClient::update(uint32_t nowMs, bool wifiConnected,
   }
 
   if (inFlight_) {
-    HttpsResponseView response{};
-    if (!transport.take(response)) {
+    HttpsTransportEvent event{};
+    if (!transport.take(event)) {
       return false;
     }
+    if (event.type == HttpsTransportEventType::ResponseBytes) {
+      if (event.bytes == nullptr || event.length == 0 ||
+          event.length > kMaxHttpsResponseChunkBytes) {
+        transport.cancel();
+        inFlight_ = false;
+        return complete(PollOutcome::monitorError(PollError::InvalidContract),
+                        kNoRetryAfter, nowMs, outcome);
+      }
+      if (event.length > kMaxRawHttpResponseBytes - responseLength_) {
+        transport.cancel();
+        inFlight_ = false;
+        return complete(PollOutcome::monitorError(PollError::OversizedBody),
+                        kNoRetryAfter, nowMs, outcome);
+      }
+      std::memcpy(responseBytes_ + responseLength_, event.bytes, event.length);
+      responseLength_ += event.length;
+      return false;
+    }
+
     inFlight_ = false;
-    uint32_t retryAfterMs = kNoRetryAfter;
-    outcome = processResponse(response, retryAfterMs);
-    completedAtMs_ = nowMs;
-    waitDurationMs_ = outcome.error == PollError::RateLimited &&
-                              retryAfterMs != kNoRetryAfter
-                          ? retryAfterMs
-                          : kPollIntervalMs;
-    waiting_ = true;
-    return true;
+    if (event.type == HttpsTransportEventType::ResponseComplete) {
+      uint32_t retryAfterMs = kNoRetryAfter;
+      const PollOutcome result = processResponse(retryAfterMs);
+      return complete(result, retryAfterMs, nowMs, outcome);
+    }
+    if (event.type == HttpsTransportEventType::Timeout) {
+      return complete(PollOutcome::transientError(PollError::Timeout),
+                      kNoRetryAfter, nowMs, outcome);
+    }
+    if (event.type == HttpsTransportEventType::ConnectFailure) {
+      return complete(PollOutcome::transientError(PollError::DnsOrConnect),
+                      kNoRetryAfter, nowMs, outcome);
+    }
+    if (event.type == HttpsTransportEventType::TlsValidationFailure) {
+      return complete(PollOutcome::monitorError(PollError::TlsValidation),
+                      kNoRetryAfter, nowMs, outcome);
+    }
+    return complete(PollOutcome::monitorError(PollError::OversizedBody),
+                    kNoRetryAfter, nowMs, outcome);
   }
 
   if (waiting_ && nowMs - completedAtMs_ < waitDurationMs_) {
@@ -146,6 +176,7 @@ bool StatusClient::update(uint32_t nowMs, bool wifiConnected,
   }
   inFlight_ = true;
   waiting_ = false;
+  responseLength_ = 0;
   return false;
 }
 
@@ -164,31 +195,16 @@ bool StatusClient::buildRequest(HttpsRequest& request) const {
   return true;
 }
 
-PollOutcome StatusClient::processResponse(const HttpsResponseView& response,
-                                          uint32_t& retryAfterMs) const {
+PollOutcome StatusClient::processResponse(uint32_t& retryAfterMs) const {
   retryAfterMs = kNoRetryAfter;
-  switch (response.status) {
-    case HttpsTransportStatus::Timeout:
-      return PollOutcome::transientError(PollError::Timeout);
-    case HttpsTransportStatus::ConnectFailure:
-      return PollOutcome::transientError(PollError::DnsOrConnect);
-    case HttpsTransportStatus::TlsValidationFailure:
-      return PollOutcome::monitorError(PollError::TlsValidation);
-    case HttpsTransportStatus::ResponseTooLarge:
-      return PollOutcome::monitorError(PollError::OversizedBody);
-    case HttpsTransportStatus::Complete:
-      break;
-  }
-
-  if (response.bytes == nullptr || response.length == 0 ||
-      response.length > kMaxRawHttpResponseBytes) {
+  if (responseLength_ == 0) {
     return PollOutcome::monitorError(PollError::InvalidContract);
   }
 
   size_t headerEnd = 0;
-  for (size_t index = 0; index + 3 < response.length; ++index) {
-    if (response.bytes[index] == '\r' && response.bytes[index + 1] == '\n' &&
-        response.bytes[index + 2] == '\r' && response.bytes[index + 3] == '\n') {
+  for (size_t index = 0; index + 3 < responseLength_; ++index) {
+    if (responseBytes_[index] == '\r' && responseBytes_[index + 1] == '\n' &&
+        responseBytes_[index + 2] == '\r' && responseBytes_[index + 3] == '\n') {
       headerEnd = index + 4;
       break;
     }
@@ -201,14 +217,14 @@ PollOutcome StatusClient::processResponse(const HttpsResponseView& response,
   auto nextLine = [&](char (&line)[kMaxHeaderLineBytes + 1]) -> bool {
     size_t end = cursor;
     while (end + 1 < headerEnd &&
-           !(response.bytes[end] == '\r' && response.bytes[end + 1] == '\n')) {
+           !(responseBytes_[end] == '\r' && responseBytes_[end + 1] == '\n')) {
       ++end;
     }
     const size_t length = end - cursor;
     if (end + 1 >= headerEnd || length > kMaxHeaderLineBytes) {
       return false;
     }
-    std::memcpy(line, response.bytes + cursor, length);
+    std::memcpy(line, responseBytes_ + cursor, length);
     line[length] = '\0';
     cursor = end + 2;
     return true;
@@ -271,7 +287,7 @@ PollOutcome StatusClient::processResponse(const HttpsResponseView& response,
   if (statusCode != 200) {
     return classifyHttpStatus(statusCode);
   }
-  const size_t bodyLength = response.length - headerEnd;
+  const size_t bodyLength = responseLength_ - headerEnd;
   if (!contentLengthSeen || !contentTypeSeen || contentLength < 0 ||
       contentLength > 4096 || std::strcmp(contentType, "application/json") != 0 ||
       bodyLength != static_cast<size_t>(contentLength)) {
@@ -282,9 +298,22 @@ PollOutcome StatusClient::processResponse(const HttpsResponseView& response,
 
   StatusSnapshot snapshot{};
   const PollError decodeError =
-      detail::decodeStatusBody(response.bytes + headerEnd, bodyLength, snapshot);
+      detail::decodeStatusBody(responseBytes_ + headerEnd, bodyLength, snapshot);
   return decodeError == PollError::None ? PollOutcome::accepted(snapshot)
                                         : PollOutcome::monitorError(decodeError);
+}
+
+bool StatusClient::complete(PollOutcome result, uint32_t retryAfterMs,
+                            uint32_t nowMs, PollOutcome& outcome) {
+  completedAtMs_ = nowMs;
+  waitDurationMs_ = result.error == PollError::RateLimited &&
+                            retryAfterMs != kNoRetryAfter
+                        ? retryAfterMs
+                        : kPollIntervalMs;
+  waiting_ = true;
+  responseLength_ = 0;
+  outcome = result;
+  return true;
 }
 
 }  // namespace nova

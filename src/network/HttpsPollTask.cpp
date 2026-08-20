@@ -71,21 +71,40 @@ bool HttpsPollTask::submit(const HttpsRequest& request) {
   return xQueueSend(commandQueue_, &command, 0) == pdTRUE;
 }
 
-bool HttpsPollTask::take(HttpsResponseView& response) {
+bool HttpsPollTask::take(HttpsTransportEvent& event) {
   if (!ready_) {
     return false;
   }
-  WorkerResult result{};
-  while (xQueueReceive(resultQueue_, &result, 0) == pdTRUE) {
-    if (result.generation != generation()) {
-      continue;
+  if (!deliveryActive_) {
+    WorkerResult result{};
+    for (;;) {
+      if (xQueueReceive(resultQueue_, &result, 0) != pdTRUE) {
+        return false;
+      }
+      if (result.generation == generation()) {
+        break;
+      }
     }
-    response.status = result.status;
-    response.bytes = responseBytes_;
-    response.length = result.length;
+    if (result.type != HttpsTransportEventType::ResponseComplete) {
+      event.type = result.type;
+      return true;
+    }
+    deliveryOffset_ = 0;
+    deliveryLength_ = result.length;
+    deliveryActive_ = true;
+  }
+
+  if (deliveryOffset_ < deliveryLength_) {
+    const size_t remaining = deliveryLength_ - deliveryOffset_;
+    event.type = HttpsTransportEventType::ResponseBytes;
+    event.bytes = responseBytes_ + deliveryOffset_;
+    event.length = std::min(remaining, kMaxHttpsResponseChunkBytes);
+    deliveryOffset_ += event.length;
     return true;
   }
-  return false;
+  event.type = HttpsTransportEventType::ResponseComplete;
+  deliveryActive_ = false;
+  return true;
 }
 
 void HttpsPollTask::cancel() {
@@ -97,6 +116,15 @@ void HttpsPollTask::cancel() {
   portEXIT_CRITICAL(&generationMux_);
   xQueueReset(commandQueue_);
   xQueueReset(resultQueue_);
+  deliveryActive_ = false;
+  deliveryOffset_ = 0;
+  deliveryLength_ = 0;
+  xTaskNotifyGive(taskHandle_);
+}
+
+uint32_t HttpsPollTask::stackHeadroomBytes() const {
+  return ready_ ? static_cast<uint32_t>(uxTaskGetStackHighWaterMark(taskHandle_))
+                : 0;
 }
 
 void HttpsPollTask::taskEntry(void* context) {
@@ -131,20 +159,20 @@ HttpsPollTask::WorkerResult HttpsPollTask::perform(
   }
   while (static_cast<uint32_t>(time(nullptr)) < kMinimumTlsEpochSeconds) {
     if (millis() - startedAtMs >= kTransactionDeadlineMs) {
-      result.status = HttpsTransportStatus::Timeout;
+      result.type = HttpsTransportEventType::Timeout;
       return result;
     }
-    vTaskDelay(pdMS_TO_TICKS(10));
+    ulTaskNotifyTake(pdTRUE, kClockWaitTicks);
   }
 
-  result.status = connect();
-  if (result.status != HttpsTransportStatus::Complete) {
+  result.type = connect();
+  if (result.type != HttpsTransportEventType::ResponseComplete) {
     return result;
   }
 
   if (tls_.write(reinterpret_cast<const uint8_t*>(command.request.bytes),
                  command.request.length) != command.request.length) {
-    result.status = HttpsTransportStatus::ConnectFailure;
+    result.type = HttpsTransportEventType::ConnectFailure;
     tls_.stop();
     return result;
   }
@@ -155,7 +183,7 @@ HttpsPollTask::WorkerResult HttpsPollTask::perform(
     if (available > 0) {
       const size_t capacity = sizeof(responseBytes_) - received;
       if (capacity == 0) {
-        result.status = HttpsTransportStatus::ResponseTooLarge;
+        result.type = HttpsTransportEventType::ResponseTooLarge;
         break;
       }
       const size_t count =
@@ -167,34 +195,34 @@ HttpsPollTask::WorkerResult HttpsPollTask::perform(
       continue;
     }
     if (!tls_.connected()) {
-      result.status = HttpsTransportStatus::Complete;
+      result.type = HttpsTransportEventType::ResponseComplete;
       result.length = static_cast<uint16_t>(received);
       break;
     }
     if (millis() - startedAtMs >= kTransactionDeadlineMs) {
-      result.status = HttpsTransportStatus::Timeout;
+      result.type = HttpsTransportEventType::Timeout;
       break;
     }
-    vTaskDelay(1);
+    ulTaskNotifyTake(pdTRUE, kSocketWaitTicks);
   }
   tls_.stop();
   return result;
 }
 
-HttpsTransportStatus HttpsPollTask::connect() {
+HttpsTransportEventType HttpsPollTask::connect() {
   IPAddress connectAddress;
   if (!connectAddress.fromString(address_) &&
       WiFi.hostByName(address_, connectAddress) != 1) {
-    return HttpsTransportStatus::ConnectFailure;
+    return HttpsTransportEventType::ConnectFailure;
   }
 
   if (tls_.connect(connectAddress, port_, tlsServerName_, caCertificatePem_,
                    nullptr, nullptr)) {
-    return HttpsTransportStatus::Complete;
+    return HttpsTransportEventType::ResponseComplete;
   }
   return connectError() == PollError::TlsValidation
-             ? HttpsTransportStatus::TlsValidationFailure
-             : HttpsTransportStatus::ConnectFailure;
+             ? HttpsTransportEventType::TlsValidationFailure
+             : HttpsTransportEventType::ConnectFailure;
 }
 
 PollError HttpsPollTask::connectError() {
