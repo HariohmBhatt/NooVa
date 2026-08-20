@@ -122,11 +122,6 @@ void HttpsPollTask::cancel() {
   xTaskNotifyGive(taskHandle_);
 }
 
-uint32_t HttpsPollTask::stackHeadroomBytes() const {
-  return ready_ ? static_cast<uint32_t>(uxTaskGetStackHighWaterMark(taskHandle_))
-                : 0;
-}
-
 void HttpsPollTask::taskEntry(void* context) {
   static_cast<HttpsPollTask*>(context)->run();
 }
@@ -158,6 +153,9 @@ HttpsPollTask::WorkerResult HttpsPollTask::perform(
     timeSyncRequested_ = true;
   }
   while (static_cast<uint32_t>(time(nullptr)) < kMinimumTlsEpochSeconds) {
+    if (command.generation != generation()) {
+      return result;
+    }
     if (millis() - startedAtMs >= kTransactionDeadlineMs) {
       result.type = HttpsTransportEventType::Timeout;
       return result;
@@ -167,6 +165,10 @@ HttpsPollTask::WorkerResult HttpsPollTask::perform(
 
   result.type = connect();
   if (result.type != HttpsTransportEventType::ResponseComplete) {
+    return result;
+  }
+  if (command.generation != generation()) {
+    tls_.stop();
     return result;
   }
 
@@ -179,6 +181,10 @@ HttpsPollTask::WorkerResult HttpsPollTask::perform(
 
   size_t received = 0;
   for (;;) {
+    if (command.generation != generation()) {
+      tls_.stop();
+      return result;
+    }
     const int available = tls_.available();
     if (available > 0) {
       const size_t capacity = sizeof(responseBytes_) - received;

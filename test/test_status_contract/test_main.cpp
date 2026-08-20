@@ -103,6 +103,21 @@ nova::StatusClient makeClient() {
   return client;
 }
 
+void test_request_configuration_rejects_http_line_breaks() {
+  const nova::StatusClientConfig cases[] = {
+      {"nova-sentinel.local\r\nX-Injected: yes", "/v1/status",
+       "test-device-token"},
+      {"nova-sentinel.local", "/v1/status\r\nX-Injected: yes",
+       "test-device-token"},
+      {"nova-sentinel.local", "/v1/status",
+       "test-device-token\r\nX-Injected: yes"},
+  };
+  for (const auto& config : cases) {
+    nova::StatusClient client;
+    TEST_ASSERT_FALSE(client.begin(config));
+  }
+}
+
 std::string response(const std::string& body, int status = 200,
                      const std::string& extraHeaders = {},
                      int declaredLength = -1,
@@ -338,6 +353,38 @@ void test_disconnect_cancels_inflight_and_reconnect_submits_immediately() {
   TEST_ASSERT_EQUAL_UINT(2, transport.submitCount());
 }
 
+void test_disconnect_discards_a_partial_response_before_recovery() {
+  nova::StatusClient client = makeClient();
+  ScriptedTransport transport;
+  nova::PollOutcome outcome{};
+  TEST_ASSERT_FALSE(client.update(0, true, transport, outcome));
+  transport.respond(response(kValidJson), 7);
+  TEST_ASSERT_FALSE(client.update(1, true, transport, outcome));
+
+  TEST_ASSERT_FALSE(client.update(2, false, transport, outcome));
+  TEST_ASSERT_EQUAL_UINT(1, transport.cancelCount());
+  TEST_ASSERT_FALSE(client.update(3, true, transport, outcome));
+  transport.respond(response(kValidJson), 7);
+
+  driveResponse(client, transport, outcome, 4);
+  TEST_ASSERT_EQUAL(nova::PollDisposition::Accepted, outcome.disposition);
+  TEST_ASSERT_EQUAL_UINT32(42, outcome.snapshot.sequence);
+}
+
+void test_transport_chunk_larger_than_contract_is_rejected_and_canceled() {
+  nova::StatusClient client = makeClient();
+  ScriptedTransport transport;
+  nova::PollOutcome outcome{};
+  TEST_ASSERT_FALSE(client.update(0, true, transport, outcome));
+  transport.respond(response(kValidJson),
+                    nova::kMaxHttpsResponseChunkBytes + 1);
+
+  TEST_ASSERT_TRUE(client.update(1, true, transport, outcome));
+  TEST_ASSERT_EQUAL(nova::PollDisposition::MonitorError, outcome.disposition);
+  TEST_ASSERT_EQUAL(nova::PollError::InvalidContract, outcome.error);
+  TEST_ASSERT_EQUAL_UINT(1, transport.cancelCount());
+}
+
 void test_null_unknown_and_body_bounds_are_validated_through_client() {
   std::string body = kValidJson;
   replaceOne(body, "\"cpu_percent_tenths\":241",
@@ -518,12 +565,15 @@ void tearDown() {}
 
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_request_configuration_rejects_http_line_breaks);
   RUN_TEST(test_client_generates_exact_authenticated_request_and_accepts_response);
   RUN_TEST(test_transport_failures_are_classified_through_client);
   RUN_TEST(test_response_is_ingested_incrementally_across_small_transport_chunks);
   RUN_TEST(test_http_status_and_header_contract_are_classified);
   RUN_TEST(test_retry_after_caps_at_sixty_seconds_and_normal_poll_is_five_seconds);
   RUN_TEST(test_disconnect_cancels_inflight_and_reconnect_submits_immediately);
+  RUN_TEST(test_disconnect_discards_a_partial_response_before_recovery);
+  RUN_TEST(test_transport_chunk_larger_than_contract_is_rejected_and_canceled);
   RUN_TEST(test_null_unknown_and_body_bounds_are_validated_through_client);
   RUN_TEST(test_maximum_valid_body_and_known_string_boundaries_are_accepted);
   RUN_TEST(test_each_overlong_known_string_is_rejected);

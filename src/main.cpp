@@ -138,14 +138,12 @@ void updatePresentation(uint32_t nowMs) {
   if (nowMs - gLastSerialReportAt >= kSerialReportIntervalMs) {
     gLastSerialReportAt = nowMs;
     Serial.printf("[NOVA] VIEW state=%s snapshot=%s age_ms=%lu rssi=%ld "
-                  "heap=%lu touch_polls=%lu https_stack_free=%lu\n",
+                  "heap=%lu touch_polls=%lu\n",
                   stateName(view.state), view.hasSnapshot ? "yes" : "no",
                   static_cast<unsigned long>(view.snapshotAgeMs),
                   static_cast<long>(gWifi.rssi()),
                   static_cast<unsigned long>(ESP.getFreeHeap()),
-                  static_cast<unsigned long>(gTouchPollCount),
-                  static_cast<unsigned long>(
-                      gStatusTransport.stackHeadroomBytes()));
+                  static_cast<unsigned long>(gTouchPollCount));
   }
 }
 
@@ -219,8 +217,7 @@ void loop() {
     updatePresentation(nowMs);
   }
 
-  // Wait on a scheduler primitive rather than encoding application cadence as
-  // a delay. A notification can wake the loop early; the one-tick bound gives
-  // lower-priority idle work CPU while remaining below every named cadence.
-  ulTaskNotifyTake(pdTRUE, kIdleSchedulerWaitTicks);
+  // Block for one scheduler tick so lower-priority idle work gets CPU while
+  // staying below every named application cadence.
+  vTaskDelay(kIdleSchedulerWaitTicks);
 }

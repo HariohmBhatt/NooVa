@@ -18,7 +18,8 @@ bool copyConfigString(const char* source, char* destination, size_t capacity) {
     return false;
   }
   const size_t length = std::strlen(source);
-  if (length == 0 || length >= capacity) {
+  if (length == 0 || length >= capacity || std::strchr(source, '\r') != nullptr ||
+      std::strchr(source, '\n') != nullptr) {
     return false;
   }
   std::memcpy(destination, source, length + 1);

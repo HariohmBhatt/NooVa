@@ -70,12 +70,12 @@ The healthy serial report ran once per second. The touch adapter ran 50 polls
 per second. Free heap returned to about 255,264 bytes between TLS transactions
 and fell to about 211,624 bytes during a transaction.
 
-The HTTPS worker has a 12,288-byte static stack. FreeRTOS reported a minimum
-unused stack value of 6,904 bytes after healthy polling and the outage drill.
-The observed headroom was 56.2%, and the maximum observed stack use was 5,384
-bytes. `HttpsPollTask::stackHeadroomBytes()` exposes this diagnostic in bytes;
-serial output does not include the request, token, certificate, SSID, or target
-address.
+The HTTPS worker has a 12,288-byte static stack. Temporary FreeRTOS
+instrumentation reported a minimum unused stack value of 6,904 bytes after
+healthy polling and the outage drill. The observed headroom was 56.2%, and the
+maximum observed stack use was 5,384 bytes. The production serial report does
+not retain the stack scan and does not include the request, token, certificate,
+SSID, or target address.
 
 ## Backend outage and recovery
 

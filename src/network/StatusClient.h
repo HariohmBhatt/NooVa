@@ -37,7 +37,15 @@ struct HttpsTransportEvent {
   size_t length = 0;
 };
 
-/** System boundary implemented by the ESP32 HTTPS worker and host test fakes. */
+/**
+ * System boundary implemented by the ESP32 HTTPS worker and host test fakes.
+ *
+ * At most one request may be active. A successful request yields zero or more
+ * ResponseBytes events followed by one ResponseComplete event; failures yield
+ * one terminal error event. ResponseBytes storage is owned by the transport
+ * and remains valid only until the next transport method call, so callers must
+ * consume or copy it before calling take(), submit(), or cancel() again.
+ */
 class StatusTransport {
  public:
   virtual ~StatusTransport() = default;

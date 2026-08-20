@@ -148,7 +148,10 @@ Waveshare documentation and then test the currently connected board.
 
 Use named `constexpr` values, fixed-capacity records and parser storage, no
 application-level dynamic allocation without justification, bounded work per
-loop, and no delays in normal update paths.
+loop, and no delays in normal module update paths. After servicing every named,
+rollover-safe application cadence, the composition loop may block for one
+scheduler tick solely to return CPU to lower-priority idle work. That scheduler
+block must not encode application timing or replace non-blocking module updates.
 
 ## Security decisions
 
@@ -195,4 +198,3 @@ Rejected for 0.1: the archived GPU-specific binary stream (not expressive
 enough for reasons/services), WebSockets/SSE (more lifecycle state), Docker
 socket inspection (excess privilege), device-owned thresholds (duplicated
 policy), and remote actions (turns a monitor into an administration surface).
-

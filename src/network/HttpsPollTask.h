@@ -32,9 +32,6 @@ class HttpsPollTask final : public StatusTransport {
   bool take(HttpsTransportEvent& event) override;
   void cancel() override;
 
-  /** Minimum unused worker stack observed by FreeRTOS, in ESP-IDF bytes. */
-  uint32_t stackHeadroomBytes() const;
-
  private:
   struct WorkerCommand {
     HttpsRequest request{};
