@@ -1,6 +1,9 @@
 {
 	admin off
 	auto_https disable_redirects
+	# ESP32 deployments commonly use an IP literal, whose TLS ClientHello has no
+	# SNI. Select the certificate for the explicitly provisioned public host.
+	default_sni {$NOVA_PUBLIC_HOST:nova-sentinel.local}
 	skip_install_trust
 	servers {
 		protocols h1 h2

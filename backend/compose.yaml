@@ -55,7 +55,7 @@ services:
     environment:
       NOVA_PUBLIC_HOST: ${NOVA_PUBLIC_HOST:?set NOVA_PUBLIC_HOST in backend/.env}
     ports:
-      - "${NOVA_LAN_ADDRESS:?set NOVA_LAN_ADDRESS in backend/.env}:443:443"
+      - "${NOVA_LAN_ADDRESS:?set NOVA_LAN_ADDRESS in backend/.env}:${NOVA_LAN_PORT:-443}:443"
     volumes:
       - type: bind
         source: ./deploy/Caddyfile

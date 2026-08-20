@@ -70,6 +70,7 @@ class Settings:
     policy: Policy = Policy()
     collection_interval_seconds: float = 5.0
     rate_limit_per_minute: int = 30
+    lan_port: int = 443
     proc_root: Path = Path("/proc")
     disk_root: Path = Path("/")
 
@@ -80,6 +81,8 @@ class Settings:
             raise ValueError("collection interval must be 0.5..60 seconds")
         if not 1 <= self.rate_limit_per_minute <= 600:
             raise ValueError("rate limit must be 1..600 requests per minute")
+        if not 1 <= self.lan_port <= 65535:
+            raise ValueError("LAN port must be 1..65535")
         if len(self.services) > 4:
             raise ValueError("at most four services may be configured")
         if len({service.id for service in self.services}) != len(self.services):
@@ -112,6 +115,7 @@ class Settings:
             policy=policy,
             collection_interval_seconds=interval,
             rate_limit_per_minute=integer("NOVA_RATE_LIMIT_PER_MINUTE", 30),
+            lan_port=integer("NOVA_LAN_PORT", 443),
             proc_root=Path(os.environ.get("NOVA_PROC_ROOT", "/proc")),
             disk_root=Path(os.environ.get("NOVA_DISK_ROOT", "/")),
         )
